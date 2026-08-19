@@ -58,6 +58,60 @@ struct StandardShaperTests {
     }
 
     @Test
+    func memberReferenceOwnershipSupportsMultipleMatchersUnderOneRuleID() throws {
+        let report = try RuleTestHarness(
+            Rules.memberReferenceOwnership(["observe", "stop"], allowed: .under("Sources/Owner"), id: "lifecycle")
+        ).evaluate(
+            VirtualRepository {
+                VirtualSourceFile.swift("Sources/Elsewhere/Leak.swift", component: "core", source: "func leak(_ value: API) { value.observe(); value.stop() }")
+            }
+        )
+
+        #expect(report.violations.map(\.ruleID) == ["lifecycle", "lifecycle"])
+        #expect(report.violations.map(\.evidence?.observed) == ["value.observe", "value.stop"])
+    }
+
+    @Test
+    func declarationAndAccessShapersCoverInternalFunctionsAndSPI() throws {
+        let ownership = Rules.declarationOwnership([.suffix("Receipt")], allowed: .under("Sources/Owner"), id: "receipt_owner")
+        let publicAPI = Rules.publicAPIOwnership(allowed: .under("Sources/API"), id: "public_owner")
+        let spi = Rules.spiOwnership(allowed: .under("Sources/Bridge"), id: "spi_owner")
+        let report = try RuleTestHarness(RuleSet { ownership; publicAPI; spi }).evaluate(
+            VirtualRepository {
+                VirtualSourceFile.swift("Sources/Elsewhere/Leak.swift", component: "core", source: "struct ResultReceipt {}\npublic func leaked() {}\n@_spi(Bridge) func bridge() {}")
+            }
+        )
+
+        #expect(report.violations.map(\.ruleID) == ["receipt_owner", "public_owner", "spi_owner"])
+    }
+
+    @Test
+    func typeAndStoredPropertyShapersCoverNewFactSurfaces() throws {
+        let types = Rules.disallowTypeReferences("Any", in: .repository, id: "no_any")
+        let bools = Rules.maximumStoredProperties(matching: "Bool", maximum: 1, in: .repository, id: "bool_soup")
+        let report = try RuleTestHarness(RuleSet { types; bools }).evaluate(
+            VirtualRepository {
+                VirtualSourceFile.swift("Sources/Core/State.swift", component: "core", source: "struct State { let one: Bool; let two: Bool }\nfunc leak(_ value: Any) -> Any { value }")
+            }
+        )
+
+        #expect(report.violations.map(\.ruleID) == ["bool_soup", "bool_soup", "no_any", "no_any"])
+    }
+
+    @Test
+    func stateMachineShapeRequiresAssociatedValueCasesWhenConfigured() throws {
+        let report = try RuleTestHarness(
+            Rules.stateMachineShape(in: .repository, requiresAssociatedValueCase: true)
+        ).evaluate(
+            VirtualRepository {
+                VirtualSourceFile.swift("Sources/Core/State.swift", component: "core", source: "enum WorkflowState { case idle }")
+            }
+        )
+
+        #expect(report.violations.first?.message == "State enum has no associated-value case.")
+    }
+
+    @Test
     func singleDeclarationPassesForOneOwnedDeclaration() throws {
         let rule = Rules.singleDeclaration(
             NominalSymbol("AccessibilityTarget"),

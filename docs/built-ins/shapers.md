@@ -26,7 +26,7 @@ Example finding: `UIKit is imported outside its allowed owners.`
 
 ```swift
 Rules.memberReferenceOwnership(
-    "shared",
+    ["shared", "replaceShared"],
     allowed: .under("Sources/Application")
 )
 ```
@@ -35,6 +35,18 @@ This rule reports matching member-access spellings outside the allowed scope.
 It reads `BuiltInFacts.memberReferences`.
 
 Example finding: `shared is referenced outside its allowed owners.`
+
+## Declaration, Access, and Type Policies
+
+`Rules.declarationOwnership([.suffix("Receipt")], allowed: ...)` restricts
+matching nominal declarations, functions, variables, and type aliases to one
+scope. `Rules.publicAPIOwnership(allowed:)` and `Rules.spiOwnership(allowed:)`
+restrict public/open and `@_spi` declarations respectively. For explicit type
+syntax, `Rules.disallowTypeReferences("Any", in: ...)` covers signatures,
+locals, and aliases. `Rules.maximumStoredProperties(matching: "Bool",
+maximum: 1, in: ...)` provides syntax-first bool-soup/optional-bag pressure.
+`Rules.stateMachineShape(in:requiresAssociatedValueCase:)` adds scoped state
+enum and associated-value-case checks without replacing `.enumStateMachine`.
 
 ## Single Declaration
 
