@@ -268,7 +268,7 @@ private func isPublic(_ modifiers: DeclModifierListSyntax) -> Bool {
     [.public, .open].contains(accessLevel(modifiers))
 }
 
-private func accessLevel(_ modifiers: DeclModifierListSyntax) -> AccessLevel {
+func accessLevel(_ modifiers: DeclModifierListSyntax) -> AccessLevel {
     let modifierNames = Set(modifiers.map(\.name.text))
     if modifierNames.contains("open") {
         return .open
@@ -288,7 +288,7 @@ private func accessLevel(_ modifiers: DeclModifierListSyntax) -> AccessLevel {
     return .internal
 }
 
-private func attributeNames(_ attributes: AttributeListSyntax) -> [AttributeName] {
+func attributeNames(_ attributes: AttributeListSyntax) -> [AttributeName] {
     attributes.compactMap { element in
         guard let name = element.as(AttributeSyntax.self)?.attributeName.trimmedDescription else {
             return nil

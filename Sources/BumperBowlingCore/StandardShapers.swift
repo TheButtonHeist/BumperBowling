@@ -22,7 +22,7 @@ extension Rules {
         id: RuleID = RuleID("import_ownership"),
         severity: Severity = .error
     ) -> RepositoryRule {
-        RepositoryRule(
+        return RepositoryRule(
             metadata: RuleMetadata(
                 id: id,
                 severity: severity,
@@ -56,16 +56,29 @@ extension Rules {
         id: RuleID = RuleID("member_reference_ownership"),
         severity: Severity = .error
     ) -> RepositoryRule {
-        RepositoryRule(
+        memberReferenceOwnership([member], allowed: allowed, id: id, severity: severity)
+    }
+
+    /// References to any selected member may only occur inside the allowed
+    /// scope. The set is validated up front so a typo cannot create a silent
+    /// no-op policy.
+    public static func memberReferenceOwnership(
+        _ members: Set<StringMatcher>,
+        allowed: RuleScope,
+        id: RuleID = RuleID("member_reference_ownership"),
+        severity: Severity = .error
+    ) -> RepositoryRule {
+        precondition(!members.isEmpty, "Member reference ownership requires at least one matcher.")
+        return RepositoryRule(
             metadata: RuleMetadata(
                 id: id,
                 severity: severity,
-                summary: "\(member) is referenced only inside its allowed owners."
+                summary: "Selected members are referenced only inside their allowed owners."
             )
         ) { context in
             try context.facts(BuiltInFacts.memberReferences)
                 .filter { occurrence in
-                    member.matches(occurrence.member)
+                    members.contains { $0.matches(occurrence.member) }
                         && !allowed.includes(
                             SourceFileDescriptor(path: occurrence.path, component: occurrence.component)
                         )
@@ -74,13 +87,140 @@ extension Rules {
                     RuleFailure(
                         path: occurrence.path,
                         location: occurrence.location,
-                        message: "\(member) is referenced outside its allowed owners.",
+                        message: "\(occurrence.member) is referenced outside its allowed owners.",
                         evidence: ViolationEvidence(
                             observed: occurrence.base.map { "\($0).\(occurrence.member)" } ?? occurrence.member,
                             expectation: "references only inside the allowed scope"
                         )
                     )
                 }
+        }
+    }
+
+    /// Named declarations matching `names` belong only to `allowed`. This
+    /// covers nominal types, functions, variables, and type aliases, whether
+    /// public or internal.
+    public static func declarationOwnership(
+        _ names: Set<StringMatcher>,
+        allowed: RuleScope,
+        id: RuleID = RuleID("declaration_ownership"),
+        severity: Severity = .error
+    ) -> RepositoryRule {
+        precondition(!names.isEmpty, "Declaration ownership requires at least one matcher.")
+        return RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "Selected declarations stay inside their allowed owners.")) { context in
+            try context.facts(BuiltInFacts.namedDeclarations).filter { occurrence in
+                names.contains { $0.matches(occurrence.name) }
+                    && !allowed.includes(SourceFileDescriptor(path: occurrence.path, component: occurrence.component))
+            }.map { occurrence in
+                RuleFailure(path: occurrence.path, location: occurrence.location, message: "\(occurrence.name.rawValue) is declared outside its allowed owners.", evidence: ViolationEvidence(observed: "\(occurrence.kind) \(occurrence.name.rawValue) in \(occurrence.path.rawValue)", expectation: "declarations only inside the allowed scope"))
+            }
+        }
+    }
+
+    /// Public or open declarations are permitted only inside `allowed`.
+    public static func publicAPIOwnership(
+        allowed: RuleScope,
+        id: RuleID = RuleID("public_api_ownership"),
+        severity: Severity = .error
+    ) -> RepositoryRule {
+        RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "Public API stays inside its declared surface.")) { context in
+            try context.facts(BuiltInFacts.namedDeclarations).filter { occurrence in
+                [.public, .open].contains(occurrence.access)
+                    && !allowed.includes(SourceFileDescriptor(path: occurrence.path, component: occurrence.component))
+            }.map { occurrence in
+                RuleFailure(path: occurrence.path, location: occurrence.location, message: "\(occurrence.access.rawValue) \(occurrence.name.rawValue) is declared outside the public API surface.", evidence: ViolationEvidence(observed: "\(occurrence.access.rawValue) \(occurrence.kind) \(occurrence.name.rawValue)", expectation: "public API only inside the allowed scope"))
+            }
+        }
+    }
+
+    /// SPI declarations are permitted only inside `allowed`.
+    public static func spiOwnership(
+        allowed: RuleScope,
+        id: RuleID = RuleID("spi_ownership"),
+        severity: Severity = .error
+    ) -> RepositoryRule {
+        RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "SPI declarations stay inside their allowed surface.")) { context in
+            try context.facts(BuiltInFacts.namedDeclarations).filter { occurrence in
+                occurrence.isSPI && !allowed.includes(SourceFileDescriptor(path: occurrence.path, component: occurrence.component))
+            }.map { occurrence in
+                RuleFailure(path: occurrence.path, location: occurrence.location, message: "SPI declaration \(occurrence.name.rawValue) is outside its allowed surface.", evidence: ViolationEvidence(observed: "@_spi \(occurrence.kind) \(occurrence.name.rawValue)", expectation: "SPI only inside the allowed scope"))
+            }
+        }
+    }
+
+    /// Rejects explicit type spellings outside `allowed`, across function and
+    /// initializer parameters, returns, local bindings, and type aliases.
+    public static func disallowTypeReferences(
+        _ matcher: StringMatcher,
+        in allowed: RuleScope = .repository,
+        id: RuleID = RuleID("disallow_type_references"),
+        severity: Severity = .error
+    ) -> RepositoryRule {
+        RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "Selected explicit type spellings are disallowed.")) { context in
+            try context.facts(BuiltInFacts.typeReferences).filter { occurrence in
+                allowed.includes(SourceFileDescriptor(path: occurrence.path, component: occurrence.component))
+                    && (matcher.matches(occurrence.type.spelling) || occurrence.type.references(matcher))
+            }.map { occurrence in
+                RuleFailure(path: occurrence.path, location: occurrence.location, message: "\(occurrence.kind.rawValue) \(occurrence.subject) uses disallowed type \(occurrence.type.spelling).", evidence: ViolationEvidence(observed: occurrence.type.spelling, expectation: "type not matching \(matcher)"))
+            }
+        }
+    }
+
+    /// Limits stored properties of a selected explicit type in each selected
+    /// file. Use this for bool-soup and optional-bag pressure without claiming
+    /// semantic state-machine analysis.
+    public static func maximumStoredProperties(
+        matching matcher: StringMatcher,
+        maximum: Int,
+        in scope: RuleScope,
+        id: RuleID = RuleID("maximum_stored_properties"),
+        severity: Severity = .error
+    ) -> RepositoryRule {
+        precondition(maximum >= 0, "Maximum stored properties cannot be negative.")
+        return RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "Selected stored properties stay within the configured limit.")) { context in
+            let properties = try context.facts(BuiltInFacts.storedProperties).filter { occurrence in
+                scope.includes(SourceFileDescriptor(path: occurrence.path, component: occurrence.component))
+                    && occurrence.property.type.map { matcher.matches($0) } == true
+            }
+            let groups = Dictionary(grouping: properties, by: { $0.path })
+            var failures: [RuleFailure] = []
+            for occurrences in groups.values where occurrences.count > maximum {
+                failures += occurrences.map { occurrence in
+                    RuleFailure(path: occurrence.path, location: occurrence.property.location, message: "\(occurrences.count) stored properties match \(matcher) in this file; maximum is \(maximum).", evidence: ViolationEvidence(observed: occurrence.property.name.rawValue, expectation: "at most \(maximum) matching stored properties per file"))
+                }
+            }
+            return failures
+        }
+    }
+
+    /// Requires a state enum in every selected file and, when requested,
+    /// requires at least one associated-value case. This is intentionally a
+    /// syntax shape check; it does not claim semantic state-machine proof.
+    public static func stateMachineShape(
+        in scope: RuleScope,
+        requiresAssociatedValueCase: Bool = false,
+        id: RuleID = RuleID("state_machine_shape"),
+        severity: Severity = .error
+    ) -> RepositoryRule {
+        RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "Selected files declare an explicit state-machine shape.")) { context in
+            var failures: [RuleFailure] = []
+            for file in context.repository.files where scope.includes(file.descriptor) {
+                let states = SyntaxQuery<EnumDeclSyntax>().matches(in: file).filter { $0.node.name.text.hasSuffix("State") }
+                guard !states.isEmpty else {
+                    failures.append(RuleFailure(path: file.path, message: "No State enum is declared.", evidence: ViolationEvidence(observed: "no enum ending in State", expectation: "an explicit state enum")))
+                    continue
+                }
+                guard requiresAssociatedValueCase else { continue }
+                let hasAssociatedValue = states.contains { state in
+                    state.node.memberBlock.members.contains { member in
+                        member.decl.as(EnumCaseDeclSyntax.self)?.elements.contains { $0.parameterClause != nil } == true
+                    }
+                }
+                if !hasAssociatedValue {
+                    failures.append(RuleFailure(path: file.path, location: states.first.flatMap { file.position(of: $0.node) }, message: "State enum has no associated-value case.", evidence: ViolationEvidence(observed: states.map { $0.node.name.text }.joined(separator: ", "), expectation: "at least one associated-value state case")))
+                }
+            }
+            return failures
         }
     }
 

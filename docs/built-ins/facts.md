@@ -20,6 +20,8 @@ engine memoizes each provider result.
 | `BuiltInFacts.effectiveAccess` | Declared and effective access levels. |
 | `BuiltInFacts.enclosingDeclarations` | Each declaration's enclosing nominal chain. |
 | `BuiltInFacts.memberReferences` | Member-access spelling and optional base spelling. |
+| `BuiltInFacts.namedDeclarations` | Public and non-public nominal types, functions, variables, and type aliases with access, attributes, path, component, and location. |
+| `BuiltInFacts.typeReferences` | Explicit function/initializer parameter and return, local-binding, and type-alias type syntax. |
 | `BuiltInFacts.componentDependencies` | Component import edges derived from configuration. |
 
 Read a fact inside `Rules.repository`:
