@@ -205,7 +205,9 @@ extension Rules {
         RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "Selected files declare an explicit state-machine shape.")) { context in
             var failures: [RuleFailure] = []
             for file in context.repository.files where scope.includes(file.descriptor) {
-                let states = SyntaxQuery<EnumDeclSyntax>().matches(in: file).filter { $0.node.name.text.hasSuffix("State") }
+                let states = SyntaxQuery<EnumDeclSyntax>().matches(in: file).filter {
+                    StringMatcher.suffix("State").matches($0.node.name.text)
+                }
                 guard !states.isEmpty else {
                     failures.append(RuleFailure(path: file.path, message: "No State enum is declared.", evidence: ViolationEvidence(observed: "no enum ending in State", expectation: "an explicit state enum")))
                     continue

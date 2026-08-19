@@ -22,7 +22,7 @@ public struct NamedDeclarationOccurrence: Equatable, Sendable {
         self.location = location
     }
 
-    public var isSPI: Bool { attributes.contains { $0.rawValue == "_spi" } }
+    public var isSPI: Bool { attributes.contains { StringMatcher.exact("_spi").matches($0) } }
 }
 
 public struct NamedDeclarationInventoryProvider: FactProvider {
