@@ -1,8 +1,8 @@
 # Bumper Bowling
 
-[![CI](https://github.com/RoyalPineapple/BumperBowling/actions/workflows/ci.yml/badge.svg)](https://github.com/RoyalPineapple/BumperBowling/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/RoyalPineapple/BumperBowling)](https://github.com/RoyalPineapple/BumperBowling/releases/latest)
-[![License](https://img.shields.io/github/license/RoyalPineapple/BumperBowling)](LICENSE)
+[![CI](https://github.com/TheButtonHeist/BumperBowling/actions/workflows/ci.yml/badge.svg)](https://github.com/TheButtonHeist/BumperBowling/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/TheButtonHeist/BumperBowling)](https://github.com/TheButtonHeist/BumperBowling/releases/latest)
+[![License](https://img.shields.io/github/license/TheButtonHeist/BumperBowling)](LICENSE)
 
 **Turn your Swift repository's unwritten rules into rules everyone can run.**
 
