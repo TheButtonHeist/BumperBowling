@@ -116,7 +116,7 @@ struct DownstreamExtensibilityTests {
 
         let storeMembers = SyntaxScope.typeMembers.intersecting(.enclosed(in: "Store"))
         let onChange = try #require(
-            variables().lexically(within: storeMembers).matches(in: file).first
+            variables().storedMembers().lexically(within: storeMembers).matches(in: file).first
         )
         #expect(onChange.node.bindings.first?.bumper.explicitTypeShape?.outerTypeName == "Handler")
 
