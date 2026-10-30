@@ -82,8 +82,8 @@ struct RuleExampleTests {
         )
     }
 
-    @Test
-    func declaredDependencyCycleExamples() async throws {
+    @Test(arguments: [false, true])
+    func declaredDependencyCycleExamples(selfDependency: Bool) async throws {
         let passingConfiguration = ArchitectureConfiguration(
             components: [
                 ComponentConfiguration(name: "core", paths: ["Sources/Core"], mayDependOn: ["ui"]),
@@ -92,7 +92,7 @@ struct RuleExampleTests {
         )
         let failingConfiguration = ArchitectureConfiguration(
             components: [
-                ComponentConfiguration(name: "core", paths: ["Sources/Core"], mayDependOn: ["ui"]),
+                ComponentConfiguration(name: "core", paths: ["Sources/Core"], mayDependOn: selfDependency ? ["core"] : ["ui"]),
                 ComponentConfiguration(name: "ui", paths: ["Sources/UI"], mayDependOn: ["core"]),
             ]
         )
@@ -145,8 +145,8 @@ struct RuleExampleTests {
         )
     }
 
-    @Test
-    func storedPropertyTypeAndMutabilityExamples() async throws {
+    @Test(arguments: ["", " = 0 { willSet {} }", " = 0 { didSet {} }"])
+    func storedPropertyTypeAndMutabilityExamples(observers: String) async throws {
         try await assertRule(
             .storedProperties(
                 StoredPropertyRuleConfiguration(
@@ -169,7 +169,7 @@ struct RuleExampleTests {
             protocol Service {}
 
             struct Model {
-                ↓var payload: Any
+                ↓var payload: Any\(observers)
                 ↓let service: any Service
             }
             """),

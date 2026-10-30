@@ -162,7 +162,18 @@ public extension BumperSyntaxView where Node == VariableDeclSyntax {
         }
 
         return node.bindings.compactMap { binding in
-            guard !binding.bumper.hasAccessorBlock,
+            let isStored: Bool
+            switch binding.accessorBlock?.accessors {
+            case nil:
+                isStored = true
+            case .accessors(let accessors):
+                isStored = accessors.allSatisfy { accessor in
+                    [.keyword(.willSet), .keyword(.didSet)].contains(accessor.accessorSpecifier.tokenKind)
+                }
+            default:
+                isStored = false
+            }
+            guard isStored,
                   let name = binding.bumper.identifierName,
                   let declarationName = try? DeclarationName(name) else {
                 return nil
