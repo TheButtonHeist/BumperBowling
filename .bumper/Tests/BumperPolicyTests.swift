@@ -11,17 +11,15 @@ struct BumperPolicyTests {
             _ = Parser.parse(source: source)
         }
         """
-        let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/BumperBowlingCore/SourceFileContext.swift", component: "core", source: source)
-            VirtualSourceFile.swift("Sources/BumperBowlingCore/SwiftFileParser.swift", component: "core", source: source)
-            VirtualSourceFile.swift("Sources/BumperBowlingCore/FactProviders.swift", component: "core", source: "func derive(file: SourceFileContext) { _ = file.syntax }")
-        })
+        let passing = try harness.evaluate([
+            SourceInput.swift("Sources/BumperBowlingCore/SourceFileContext.swift", component: "core", source: source),
+            SourceInput.swift("Sources/BumperBowlingCore/SwiftFileParser.swift", component: "core", source: source),
+            SourceInput.swift("Sources/BumperBowlingCore/FactProviders.swift", component: "core", source: "func derive(file: SourceFileContext) { _ = file.syntax }"),
+        ])
         #expect(passing.violations.isEmpty)
 
         let paths = ["Sources/BumperBowlingCore/FactProviders.swift", "Sources/BumperBowlingCore/ArchitectureRuleEvaluation.swift"]
-        let failing = try harness.evaluate(VirtualRepository {
-            for path in paths { VirtualSourceFile.swift(path, component: "core", source: source) }
-        })
+        let failing = try harness.evaluate(paths.map { SourceInput.swift($0, component: "core", source: source) })
         #expect(failing.violations.count == 2)
         for path in paths {
             let matcher = ViolationMatcher(
@@ -40,14 +38,14 @@ struct BumperPolicyTests {
             _ = Process()
         }
         """
-        let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/BumperBowlingCore/ConfigurationCommandRunner.swift", component: "core", source: source)
-        })
+        let passing = try harness.evaluate([
+            SourceInput.swift("Sources/BumperBowlingCore/ConfigurationCommandRunner.swift", component: "core", source: source),
+        ])
         #expect(passing.violations.isEmpty)
 
-        let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/BumperBowlingCore/BumperCommands.swift", component: "core", source: source)
-        })
+        let failing = try harness.evaluate([
+            SourceInput.swift("Sources/BumperBowlingCore/BumperCommands.swift", component: "core", source: source),
+        ])
         #expect(failing.violations.count == 1)
         #expect(failing.contains(ViolationMatcher(
             id: "bumper.process_construction", path: "Sources/BumperBowlingCore/BumperCommands.swift",
@@ -59,8 +57,8 @@ struct BumperPolicyTests {
     @Test func executionUsesTheBoundedOrInteractiveMethod() throws {
         let harness = RuleTestHarness(processExecutionBoundary)
         let path = "Sources/BumperBowlingCore/ConfigurationCommandRunner.swift"
-        let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift(path, component: "core", source: """
+        let passing = try harness.evaluate([
+            SourceInput.swift(path, component: "core", source: """
             extension ConfigurationLoader {
                 static func runProcess(_ process: Process) throws {
                     try process.run()
@@ -73,13 +71,13 @@ struct BumperPolicyTests {
                     process.waitUntilExit()
                 }
             }
-            """)
-            VirtualSourceFile.swift("Sources/BumperBowlingCore/BumperCommands.swift", component: "core", source: "func lint() { engine.run() }")
-        })
+            """),
+            SourceInput.swift("Sources/BumperBowlingCore/BumperCommands.swift", component: "core", source: "func lint() { engine.run() }"),
+        ])
         #expect(passing.violations.isEmpty)
 
-        let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift(path, component: "core", source: """
+        let failing = try harness.evaluate([
+            SourceInput.swift(path, component: "core", source: """
             extension ConfigurationLoader {
                 static func bypass(_ process: Process) throws {
                     try process.run()
@@ -91,8 +89,8 @@ struct BumperPolicyTests {
             struct Other {
                 func runProcess(_ process: Process) throws { try process.run() }
             }
-            """)
-        })
+            """),
+        ])
         #expect(failing.violations.count == 5)
         for (line, column, observed) in [
             (3, 13, "process.run()"),
@@ -110,7 +108,7 @@ struct BumperPolicyTests {
     }
 
     @Test(arguments: mutableImplementations)
-    func mutationExceptionsApplyOnlyToTheirDeclarations(implementation: VirtualSourceFile) throws {
+    func mutationExceptionsApplyOnlyToTheirDeclarations(implementation: SourceInput) throws {
         let harness = RuleTestHarness(immutableEngineState)
         let ordinaryCode = """
 
@@ -120,19 +118,19 @@ struct BumperPolicyTests {
             func work() { var local = 0; local += 1 }
         }
         """
-        let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile(path: implementation.path, component: implementation.component, source: implementation.source + ordinaryCode)
-        })
+        let passing = try harness.evaluate([
+            SourceInput(path: implementation.path, component: implementation.component, source: implementation.source + ordinaryCode),
+        ])
         #expect(passing.violations.isEmpty)
 
-        let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile(path: implementation.path, component: implementation.component, source: implementation.source + """
+        let failing = try harness.evaluate([
+            SourceInput(path: implementation.path, component: implementation.component, source: implementation.source + """
 
             struct NewModel { var value = 0 { didSet {} } }
             extension FactStore { struct Nested { var value = 0 } }
-            """)
-            VirtualSourceFile.swift("Sources/BumperBowlingCore/Unrelated.swift", component: "core", source: "class FactStore { var cache = 0 }")
-        })
+            """),
+            SourceInput.swift("Sources/BumperBowlingCore/Unrelated.swift", component: "core", source: "class FactStore { var cache = 0 }"),
+        ])
         #expect(failing.violations.count == 3)
         for owner in ["NewModel", "Nested"] {
             #expect(failing.violations(matching: ViolationMatcher(
@@ -148,7 +146,7 @@ struct BumperPolicyTests {
     }
 }
 
-private let mutableImplementations: [VirtualSourceFile] = [
+private let mutableImplementations: [SourceInput] = [
     .swift("Sources/BumperBowlingCore/ConfigurationCommandRunner.swift", component: "core", source: """
     struct BoundedOutputBuffer {
         private(set) var data = Data()

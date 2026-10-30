@@ -116,7 +116,7 @@ Before adding or retaining a rule:
 ## Test Contract
 
 Every project-defined `Rules.repository`, `Rules.files`, or visitor rule needs
-both tests through `RuleTestHarness` and `VirtualRepository`:
+both tests through `RuleTestHarness` with arrays of `SourceInput`:
 
 - **Positive test**: a valid fixture produces no violations.
 - **Mutation test**: minimally mutate that valid fixture into the forbidden

@@ -4,6 +4,18 @@ Bumper Bowling does not ship a house architecture. It ships one open rule
 engine, SwiftSyntax-observed facts, and typed composition points so each
 repository can define its own architecture vocabulary.
 
+Custom rules can inspect the full SwiftSyntax tree. `SyntaxQuery<Node>` accepts
+any SwiftSyntax node type. Queries, ordinary Swift closures, and shared facts
+can express requirements inside declarations and relationships across files.
+
+The [executable rule recipes](RULE_RECIPES.md) demonstrate these forms through
+the public test harness.
+
+Architecture is optional. The scanner supplies all included Swift sources,
+including unowned files. Source descriptors and derived source facts use an
+optional `component`. Component dependency facts contain only owned sources.
+`SourceCoverage` can report missing or overlapping ownership separately.
+
 Every rule — built-in or project-defined — is a `RuleDefinition` evaluated over
 one immutable `RuleContext`, producing `RuleFailure` values that become
 `RuleViolation`s in one `RuleReport`. There is no second engine, no registry,
@@ -22,8 +34,8 @@ the level above cannot:
 3. **Closure rules over typed facts** — `Rules.repository(...)` with memoized
    `FactProvider` values when the invariant is repo-specific but the facts are
    standard.
-4. **Per-file syntax rules and typed queries** — `Rules.files(...)` and
-   `SyntaxQuery` when the rule needs to inspect parsed syntax.
+4. **Syntax rules and typed queries** — `Rules.each(...)` for each typed match,
+   `Rules.files(...)` for each file, and `SyntaxQuery` for parsed syntax.
 5. **Raw `SyntaxVisitor`** — `VisitorRule` when nothing above fits. This is a
    permanent escape hatch, not a deprecation lane.
 
@@ -146,6 +158,12 @@ Built-in providers under `BuiltInFacts`:
 | `memberReferences` | Member accesses with optional base names. |
 | `componentDependencies` | Component-to-component import edges. |
 
+With `scope:`, a repository closure takes `{ subjects, context in ... }`.
+Subjects are the selected source files. Context and shared facts still cover
+the full input. Diagnostics must anchor selected subjects. An outside diagnostic
+is an explicit evaluation error. The [factory reference](built-ins/rule-factories.md#repository-rule)
+defines empty scopes and diagnostic anchors.
+
 ### Defining Your Own Fact Provider
 
 A provider is a value type with a stable `id` and a `derive(in:)`:
@@ -165,6 +183,11 @@ Providers may request other providers through `context.facts(_:)`; cycles are
 explicit errors, never deadlocks or empty results. Derivation failures fail the
 run — an analysis error is never an empty match set.
 
+A provider ID identifies its complete derivation, including parameters. Two
+providers with the same ID share the first result or error within one run.
+Different parameter values need different IDs if they produce different facts.
+The cache does not compare provider values or inspect closure captures.
+
 ## Per-File Syntax Rules and Typed Queries
 
 `Rules.files(_:severity:summary:_:)` runs once per parsed file. The whole run parses
@@ -173,16 +196,12 @@ each file exactly once; every rule shares the same trees.
 Typed queries compose over the parsed file and preserve node types:
 
 ```swift
-Rules.files(
-    "project.no_alternate_aliases",
+Rules.each(
+    typeAliases().aliasing("AccessibilityTarget"),
+    id: "project.no_alternate_aliases",
     summary: "AccessibilityTarget has one spelling."
-) { file in
-    typeAliases()
-        .aliasing(NominalSymbol("AccessibilityTarget"))
-        .matches(in: file)
-        .map { match in
-            match.failure(message: "\(match.node.name.text) aliases AccessibilityTarget.")
-        }
+) { match in
+    [match.failure(message: "\(match.node.name.text) aliases AccessibilityTarget.")]
 }
 ```
 
@@ -193,6 +212,15 @@ Queries filter files with
 `lexically(excluding:)`. `SyntaxScope`
 composes file, type-member, local, protocol, enclosing-type, and
 enclosing-function predicates without coupling them to repository paths.
+
+Common match facts use direct access: `match.lexicalContext`,
+`variable.isMutable`, and `variable.bindingNames`. For stored member
+declarations, use `variables().storedMembers()`. Query predicates can use
+key paths, such as `.filter(\.isMutable)`.
+
+These conveniences reuse the existing syntax facts. `match.node` retains full
+SwiftSyntax access. The [query reference](built-ins/syntax-queries.md#match-context-and-facts)
+defines the selection rules and includes a complete example.
 
 Typed syntax views expose value-only `LexicalContext` and `TypeShape` facts.
 Type shapes describe explicit binding and typealias syntax, including
@@ -368,19 +396,20 @@ func flagsForeignDeclarations() throws {
     let rule = Rules.singleDeclaration("AccessibilityTarget", owner: "Sources/Plans")
 
     let report = try RuleTestHarness(rule).evaluate(
-        VirtualRepository {
-            VirtualSourceFile.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}")
-            VirtualSourceFile.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}")
-        }
+        [
+            SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
+            SourceInput.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}"),
+        ]
     )
 
     #expect(report.violations.map(\.path.rawValue) == ["Sources/Score/Foreign.swift"])
 }
 ```
 
-`VirtualSourceFile.swift(_:component:source:)` accepts strings, `ComponentID`,
-or your project's `ComponentKey` enum. The harness is framework-neutral — it
-works under Swift Testing and XCTest alike.
+Pass an array of `SourceInput` values. The test-support convenience
+`SourceInput.swift(_:component:source:)` validates string paths and optional
+component names. Use `SourceInput(path:component:source:)` for typed values.
+The harness works under Swift Testing and XCTest.
 
 ## Profiling Rules
 
@@ -416,6 +445,11 @@ For syntax policies that are about how often a pattern occurs per file, use
 reports the observed count as structured evidence. Excess matches retain their
 source location; missing matches report against the affected file.
 
+The default counting unit is `.perFile`. Use `counting: .repository` to combine
+matches across selected files. File scope and counting unit are independent.
+The [factory reference](built-ins/rule-factories.md#cardinality-rule) defines
+shortage diagnostics, empty scopes, and count validation.
+
 ```swift
 Rules.assert(
     functionCalls(),
@@ -444,7 +478,7 @@ Use SwiftLint for local style, formatting, and code-smell policy.
 Use the Swift compiler for inferred types, symbol resolution, macro expansion,
 protocol conformance truth, and build-target truth.
 
-Use Bumper Bowling when the rule is about architecture policy and SwiftSyntax
+Use Bumper Bowling when the rule is about project policy and SwiftSyntax
 can observe enough source facts to report deterministic evidence.
 
 Every finding should be explainable as:

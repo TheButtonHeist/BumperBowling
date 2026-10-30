@@ -15,13 +15,13 @@ struct SyntaxCardinalityRuleTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Core/Runner.swift",
                     component: "core",
                     source: "func run() { execute() }"
-                )
-            }
+                ),
+            ]
         )
 
         let violation = try #require(report.violations.first)
@@ -40,13 +40,13 @@ struct SyntaxCardinalityRuleTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Core/Model.swift",
                     component: "core",
                     source: "let first = 1\nlet second = 2"
-                )
-            }
+                ),
+            ]
         )
 
         let violation = try #require(report.violations.first)
@@ -67,18 +67,18 @@ struct SyntaxCardinalityRuleTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Domain/Model.swift",
                     component: "domain",
                     source: "struct Model {}"
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Sources/UI/View.swift",
                     component: "ui",
                     source: "enum ViewState { case idle }"
-                )
-            }
+                ),
+            ]
         )
 
         let violation = try #require(report.violations.first)
@@ -99,13 +99,13 @@ struct SyntaxCardinalityRuleTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Core/Types.swift",
                     component: "core",
                     source: "struct Identifier {}"
-                )
-            }
+                ),
+            ]
         )
 
         let violation = try #require(report.violations.first)

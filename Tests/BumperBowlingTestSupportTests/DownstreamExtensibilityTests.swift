@@ -22,18 +22,18 @@ struct DownstreamExtensibilityTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/App/Feature.swift",
                     component: "app",
                     source: "func f(value: Int?) -> Int { value! }"
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Tests/AppTests/FeatureTests.swift",
                     component: "app",
                     source: "func t(value: Int?) -> Int { value! }"
-                )
-            }
+                ),
+            ]
         )
 
         let violation = try #require(report.violations.first)
@@ -63,10 +63,10 @@ struct DownstreamExtensibilityTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/App/GoodView.swift", component: "app", source: "struct GoodView {}")
-                VirtualSourceFile.swift("Sources/App/BadScreen.swift", component: "app", source: "struct BadScreen {}")
-            }
+            [
+                SourceInput.swift("Sources/App/GoodView.swift", component: "app", source: "struct GoodView {}"),
+                SourceInput.swift("Sources/App/BadScreen.swift", component: "app", source: "struct BadScreen {}"),
+            ]
         )
 
         #expect(report.violations.map(\.message) == ["BadScreen looks like a view but is not named one."])
@@ -83,16 +83,16 @@ struct DownstreamExtensibilityTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/App/Sync.swift",
                     component: "app",
                     source: """
                     func plain() {}
                     func fetch() async {}
                     """
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.message) == ["fetch is async."])
@@ -116,13 +116,60 @@ struct DownstreamExtensibilityTests {
 
         let storeMembers = SyntaxScope.typeMembers.intersecting(.enclosed(in: "Store"))
         let onChange = try #require(
-            variables().lexically(within: storeMembers).matches(in: file).first
+            variables().storedMembers().lexically(within: storeMembers).matches(in: file).first
         )
         #expect(onChange.node.bindings.first?.bumper.explicitTypeShape?.outerTypeName == "Handler")
 
         let alias = try #require(typeAliases().matches(in: file).first)
         #expect(alias.node.bumper.aliasedTypeShape.isFunction)
         #expect(alias.node.bumper.aliasedTypeShape.hasAttribute(matching: "Sendable"))
+    }
+
+    @Test
+    func mutableStoredMembersKeepDeclarationBoundariesAndSourceEvidence() throws {
+        let harness = RuleTestHarness(Rules.each(
+            variables().storedMembers().filter(\.isMutable),
+            id: "project.mutable_members", summary: "Models do not declare mutable stored members."
+        ) { variable in
+            [variable.failure(
+                message: "Mutable state in \(variable.lexicalContext.enclosingNominalNames.joined(separator: ".")).",
+                evidence: ViolationEvidence(
+                    observed: variable.bindingNames.joined(separator: ", "), expectation: "no mutable stored members"
+                )
+            )]
+        })
+        let passing = try harness.evaluate([
+            SourceInput.swift("Sources/Model.swift", source: """
+            var global = 0
+            struct Model {
+                let fixed = 0
+                var computed: Int { fixed }
+                var accessor: Int { get { fixed } set {} }
+                func work() { var local = 0; local += 1 }
+            }
+            """),
+        ])
+        #expect(passing.violations.isEmpty)
+        let failing = try harness.evaluate([
+            SourceInput.swift("Sources/Model.swift", source: """
+            var global = 0
+            struct Model {
+                var first = 0, second = 1
+                var observed = 0 { willSet {} didSet {} }
+                let fixed = 0
+                var computed: Int { fixed }
+                func work() { var local = 0; local += 1 }
+            }
+            """),
+        ])
+        #expect(failing.violations.count == 2)
+        for (line, names) in [(3, "first, second"), (4, "observed")] {
+            #expect(failing.violations(matching: ViolationMatcher(
+                id: "project.mutable_members", path: "Sources/Model.swift",
+                location: SourcePosition(line: line, column: 5), message: .exact("Mutable state in Model."),
+                observed: .exact(names), expectation: .exact("no mutable stored members")
+            )).count == 1)
+        }
     }
 
     @Test
@@ -153,9 +200,9 @@ struct DownstreamExtensibilityTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/App/Screen.swift", component: "app", source: "import UIKit")
-            }
+            [
+                SourceInput.swift("Sources/App/Screen.swift", component: "app", source: "import UIKit"),
+            ]
         )
 
         let encoded = try JSONEncoder().encode(report)

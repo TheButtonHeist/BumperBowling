@@ -136,7 +136,8 @@ public extension BumperSyntaxView where Node == PatternBindingSyntax {
 }
 
 public extension BumperSyntaxView where Node == VariableDeclSyntax {
-    var isMutableBinding: Bool {
+    /// The declaration uses the `var` keyword.
+    var isMutable: Bool {
         node.bindingSpecifier.tokenKind == .keyword(.var)
     }
 
@@ -186,7 +187,7 @@ public extension BumperSyntaxView where Node == VariableDeclSyntax {
                 type: typeName,
                 access: accessLevel(node.modifiers),
                 attributes: attributeNames(node.attributes),
-                isMutable: isMutableBinding
+                isMutable: isMutable
             )
         }
     }
@@ -226,7 +227,7 @@ public extension BumperSyntaxView where Node == VariableDeclSyntax {
     }
 
     func imperativeConstructs(location: SourcePosition?) -> [ObservedImperativeConstruct] {
-        isMutableBinding
+        isMutable
             ? [ObservedImperativeConstruct(construct: .mutableBinding, location: location)]
             : []
     }

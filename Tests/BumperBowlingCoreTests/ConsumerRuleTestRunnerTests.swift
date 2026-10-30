@@ -167,13 +167,13 @@ import Testing
 
 @Test func `Fixture rule reports violation`() throws {
     let report = try RuleTestHarness(fixtureRule).evaluate(
-        VirtualRepository {
-            VirtualSourceFile.swift(
+        [
+            SourceInput.swift(
                 "Sources/App.swift",
                 component: "app",
                 source: "struct App {}"
-            )
-        }
+            ),
+        ]
     )
 
     #expect(report.violations.map { $0.message } == ["fixture violation"])
@@ -187,13 +187,13 @@ import Testing
 
 @Test func `Fixture rule reports no violations`() throws {
     let report = try RuleTestHarness(fixtureRule).evaluate(
-        VirtualRepository {
-            VirtualSourceFile.swift(
+        [
+            SourceInput.swift(
                 "Sources/App.swift",
                 component: "app",
                 source: "struct App {}"
-            )
-        }
+            ),
+        ]
     )
 
     #expect(report.violations.isEmpty)
@@ -241,6 +241,7 @@ let packageInternalSentinel = "visible through @testable"
 """
 
 private let packagedRuleTest = """
+import BumperBowlingCore
 import BumperBowlingTestSupport
 import Testing
 @testable import BumperRules
@@ -249,13 +250,13 @@ import Testing
     #expect(packageInternalSentinel == "visible through @testable")
 
     let report = try RuleTestHarness(packageFixtureRule).evaluate(
-        VirtualRepository {
-            VirtualSourceFile.swift(
+        [
+            SourceInput.swift(
                 "Sources/App.swift",
                 component: "app",
                 source: "struct App {}"
-            )
-        }
+            ),
+        ]
     )
     #expect(report.violations.map { $0.message } == ["package fixture violation"])
 }
@@ -323,6 +324,7 @@ private func makePackagedConsumerRepository() throws -> URL {
                 name: "BumperRulesTests",
                 dependencies: [
                     "BumperRules",
+                    .product(name: "BumperBowlingCore", package: "BumperBowling"),
                     .product(name: "BumperBowlingTestSupport", package: "BumperBowling"),
                 ],
                 path: "RuleSpecs"

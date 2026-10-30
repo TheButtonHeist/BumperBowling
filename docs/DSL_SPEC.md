@@ -164,7 +164,7 @@ let projectRules = RuleSet {
             .map { occurrence in
                 RuleFailure(
                     path: occurrence.path,
-                    message: "\(occurrence.component.rawValue) imports non-allowlisted module \(occurrence.module.rawValue)",
+                    message: "\(occurrence.component?.rawValue ?? "Unowned source") imports non-allowlisted module \(occurrence.module.rawValue)",
                     evidence: ViolationEvidence(
                         observed: occurrence.module.rawValue,
                         expectation: "allowed imports: Foundation"
@@ -180,7 +180,15 @@ cached project runner as Codable `RepositoryInput`; the runner parses each file
 once, evaluates all rules, and returns one Codable `RuleReport`. Closures never
 cross the process boundary, and rule code does not traverse the filesystem.
 
-Per-file syntax rules evaluate `SourceFileContext` values with raw SwiftSyntax:
+The scan includes all selected Swift sources. Component ownership is optional
+metadata, not a condition for syntax analysis. A `BumperProject` can contain
+`Included` and `Rules` without an `Architecture` block.
+
+Scoped repository closures receive `{ subjects, context in ... }`. Subjects are
+selected files. The full context supports cross-file lookups. A diagnostic
+outside the selected subjects fails evaluation explicitly.
+
+Match rules evaluate typed SwiftSyntax nodes and retain their file context:
 
 ```swift
 // .bumper/Sources/ProjectRules.swift
@@ -188,26 +196,14 @@ import BumperBowlingCore
 import SwiftSyntax
 
 let projectRules = RuleSet {
-    Rules.files(
-        "core.no_tuple_api",
+    Rules.each(
+        SyntaxQuery<TupleTypeSyntax>(),
+        id: "core.no_tuple_api",
         severity: .error,
-        summary: "Public core APIs use named result types."
-    ) { file in
-        let visitor = TupleTypeCollector(viewMode: .sourceAccurate)
-        visitor.walk(file.syntax)
-
-        return visitor.tuples.map { tuple in
-            file.failure(at: tuple, message: "Tuple API must use a named type.")
-        }
-    }
-}
-
-private final class TupleTypeCollector: SyntaxVisitor {
-    private(set) var tuples: [TupleTypeSyntax] = []
-
-    override func visit(_ node: TupleTypeSyntax) -> SyntaxVisitorContinueKind {
-        tuples.append(node)
-        return .skipChildren
+        summary: "Core code uses named types instead of tuples.",
+        scope: .under("Sources/Core")
+    ) { tuple in
+        [tuple.failure(message: "Tuple type must use a named type.")]
     }
 }
 ```
@@ -398,9 +394,9 @@ See [SWIFTSYNTAX_SURFACE.md](SWIFTSYNTAX_SURFACE.md) for the current fact surfac
 Bumper Bowling follows a tiny version of SwiftLint's self-test pattern:
 
 - Rule fixtures use `↓` markers for expected violation locations.
-- Every rule can be tested in memory with `RuleTestHarness` and
-  `VirtualRepository` from `BumperBowlingTestSupport`, returning the same
-  `RuleReport` the engine and CLI produce.
+- Every rule can be tested in memory with `RuleTestHarness` from
+  `BumperBowlingTestSupport`. Pass an array of `SourceInput` values to receive
+  the same `RuleReport` the engine and CLI produce.
 - Command tests cover `scan` and `lint`.
 - A self-lint test runs Bumper Bowling against this repository and records error-level findings.
 
@@ -411,14 +407,14 @@ Add `SourceCoverage(.error)` to `Rules` to require exactly one component owner f
 
 The scanner inventories included source files before it resolves owners. Exclusions apply before inventory.
 Unowned Swift files produce findings with their paths and an instruction to add ownership or exclude the files.
-Unowned files do not enter SwiftSyntax or component-based rules.
+Unowned Swift files enter syntax analysis. Component scopes select only owned files.
 Ownership paths that match no included source files produce warnings, capped at the configured severity.
 Paths with only unsupported source languages produce notes, so an intentional Objective-C shim does not fail the coverage assertion.
 
 Both scan and lint JSON include a `coverage` object:
 
 - `includedFileCount`: included source files, including recognized unsupported languages.
-- `scannedFileCount`: owned Swift files passed to syntax analysis.
+- `scannedFileCount`: all included Swift files passed to syntax analysis, including unowned files.
 - `unownedFileCount` and `unownedPaths`: included Swift files without owners.
 - `overlappingPaths`: included Swift files with multiple component owners.
 - `languages`: counts by file extension, with an explicit `isSupported` flag.

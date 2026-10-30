@@ -18,8 +18,22 @@ public struct SyntaxMatch<Node: SyntaxProtocol>: Sendable {
         self.file = file
     }
 
+    public var lexicalContext: LexicalContext {
+        node.bumper.lexicalContext
+    }
+
     public func failure(message: String, evidence: ViolationEvidence? = nil) -> RuleFailure {
         file.failure(at: node, message: message, evidence: evidence)
+    }
+}
+
+public extension SyntaxMatch where Node == VariableDeclSyntax {
+    var isMutable: Bool {
+        node.bumper.isMutable
+    }
+
+    var bindingNames: [String] {
+        node.bumper.bindingNames
     }
 }
 
@@ -83,13 +97,13 @@ public struct SyntaxQuery<Node: SyntaxProtocol>: SyntaxPattern, Sendable {
 
     public func lexically(within scope: SyntaxScope) -> Self {
         filter { match in
-            scope.includes(match.node.bumper.lexicalContext)
+            scope.includes(match.lexicalContext)
         }
     }
 
     public func lexically(excluding scope: SyntaxScope) -> Self {
         filter { match in
-            !scope.includes(match.node.bumper.lexicalContext)
+            !scope.includes(match.lexicalContext)
         }
     }
 }
@@ -135,6 +149,14 @@ public func functionCalls() -> SyntaxQuery<FunctionCallExprSyntax> {
 }
 
 // MARK: - Capability-specific operations
+
+extension SyntaxQuery where Node == VariableDeclSyntax {
+    /// Selects declarations with at least one stored member binding. Locals,
+    /// globals, and computed properties are excluded; property observers remain.
+    public func storedMembers() -> Self {
+        filter { !$0.node.bumper.storedProperties().isEmpty }
+    }
+}
 
 extension SyntaxQuery where Node: DeclGroupSyntax {
     public func inheriting(_ type: NominalSymbol) -> Self {

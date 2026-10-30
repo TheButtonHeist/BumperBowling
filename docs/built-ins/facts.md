@@ -5,6 +5,14 @@
 Fact providers derive typed repository observations once per evaluation. The
 engine memoizes each provider result.
 
+Source observations include unowned files. Their `component` is optional.
+Architecture-specific dependency edges require an owned source and a declared
+target component. No placeholder component represents an unowned file.
+
+A provider ID identifies the complete derivation, including parameters. The
+first result or error for an ID is shared within one run. The cache does not
+compare provider values or closure captures.
+
 | Fact | Value |
 | --- | --- |
 | `BuiltInFacts.sourceFiles` | Projected facts for each source file. |
@@ -25,27 +33,21 @@ engine memoizes each provider result.
 | `BuiltInFacts.typeReferences` | Explicit function/initializer parameter and return, local-binding, and type-alias type syntax. |
 | `BuiltInFacts.componentDependencies` | Component import edges derived from configuration. |
 
-Read a fact inside `Rules.repository`:
+For count requirements, use the cardinality factory:
 
 ```swift
-Rules.repository(
-    "project.one_environment",
-    summary: "AppEnvironment has one declaration."
-) { context in
-    let declarations = try context.facts(
-        BuiltInFacts.declarations
-    )
-
-    return declarations.occurrences(of: "AppEnvironment").count == 1
-        ? []
-        : [
-            RuleFailure(
-                path: "Sources/Application/AppEnvironment.swift",
-                message: "AppEnvironment does not have one declaration."
-            )
-        ]
-}
+Rules.assert(
+    structs().filter { $0.node.name.text.hasSuffix("Environment") },
+    cardinality: .exactly(1),
+    counting: .repository,
+    id: "environments.one",
+    summary: "One environment struct per counting unit."
+)
 ```
+
+For relationships between observations, request facts inside `Rules.repository`
+through `context.facts(_:)`. The [route recipe](../RULE_RECIPES.md#relationships-across-files)
+collects declarations and registrations once, then compares them in a scoped rule.
 
 Define another provider by conforming a value type to `FactProvider`. A
 provider can read other providers through the same `context.facts(_:)` call.
@@ -109,16 +111,14 @@ in `Actor` have no special meaning. Other attributes retain their spelling and
 an unresolved result.
 
 ```swift
-Rules.files("project.callback_policy", summary: "Require explicit callback analysis.") { file in
-    let resolver = LexicalTypeResolver(file: file)
-    return variables().matches(in: file).flatMap { variable -> [RuleFailure] in
-        variable.node.bindings.compactMap { binding in
-            guard binding.bumper.identifierName == "onChange",
-                  let type = binding.typeAnnotation?.type else { return nil }
-            let callback = resolver.resolve(type)
-            guard callback.failure != nil else { return nil }
-            return file.failure(at: type, message: "Callback analysis needs more context.")
-        }
+Rules.each(variables(), id: "project.callback_policy", summary: "Require explicit callback analysis.") { variable in
+    let resolver = LexicalTypeResolver(file: variable.file)
+    return variable.node.bindings.compactMap { binding in
+        guard binding.bumper.identifierName == "onChange",
+              let type = binding.typeAnnotation?.type else { return nil }
+        let callback = resolver.resolve(type)
+        guard callback.failure != nil else { return nil }
+        return variable.file.failure(at: type, message: "Callback analysis needs more context.")
     }
 }
 ```

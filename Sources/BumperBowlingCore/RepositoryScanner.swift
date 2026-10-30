@@ -27,6 +27,16 @@ public struct RepositoryScanner: Sendable {
     private let limits: RepositoryScanLimits
 
     public init(
+        scan: ScanConfiguration,
+        parser: SwiftFileParser = SwiftFileParser(),
+        limits: RepositoryScanLimits = .default
+    ) throws {
+        try self.init(configuration: ArchitectureConfiguration(
+            includedPaths: scan.includedPaths, excludedPaths: scan.excludedPaths
+        ), parser: parser, limits: limits)
+    }
+
+    public init(
         configuration: ArchitectureConfiguration,
         parser: SwiftFileParser = SwiftFileParser(),
         limits: RepositoryScanLimits = .default
@@ -46,13 +56,10 @@ public struct RepositoryScanner: Sendable {
         self.limits = limits
     }
 
-    /// Reads owned Swift sources. Use `scanInput` to retain coverage metadata
-    /// and evaluate unowned files as rule findings instead of a scan error.
+    /// Reads all included Swift sources, with optional component ownership.
+    /// Use `scanInput` to retain coverage metadata for architecture checks.
     public func scanSources(root: URL) async throws -> [SourceInput] {
         let input = try await scanInput(root: root)
-        if let path = input.coverage?.unownedPaths.first {
-            throw BumperError.noComponentForFile(path.rawValue)
-        }
         return input.files
     }
 
@@ -163,12 +170,11 @@ public struct RepositoryScanner: Sendable {
                     "Swift source files exceed \(limits.maxTotalBytes) total bytes."
                 )
             }
-            guard let component = rules.component(containing: typedRelativePath) else { continue }
             inputs.append(
                 SwiftSourceFileInput(
                     url: url,
                     relativePath: typedRelativePath,
-                    component: component.id
+                    component: rules.component(containing: typedRelativePath)?.id
                 )
             )
         }
@@ -183,10 +189,6 @@ public struct RepositoryScanner: Sendable {
 
         let relativePath = Self.relativePath(for: url, root: root)
         let typedRelativePath = try RelativeFilePath(relativePath)
-        guard let component = rules.component(containing: typedRelativePath) else {
-            throw BumperError.noComponentForFile(relativePath)
-        }
-
         guard isSwiftFile(typedRelativePath) else {
             throw BumperError.unsupportedLanguage(relativePath)
         }
@@ -217,7 +219,7 @@ public struct RepositoryScanner: Sendable {
         return try parser.parseFile(
             at: url,
             relativePath: typedRelativePath,
-            component: component.id
+            component: rules.component(containing: typedRelativePath)?.id
         )
     }
 
@@ -262,5 +264,5 @@ public struct RepositoryScanner: Sendable {
 private struct SwiftSourceFileInput: Sendable {
     let url: URL
     let relativePath: RelativeFilePath
-    let component: ComponentID
+    let component: ComponentID?
 }

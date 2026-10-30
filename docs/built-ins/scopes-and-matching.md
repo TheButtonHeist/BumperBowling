@@ -17,6 +17,18 @@
 Combine scopes with `.union(_:)`, `.intersecting(_:)`, and `.excluding(_:)`.
 A repository also defines a scope with `RuleScope { descriptor in ... }`.
 
+An unowned source has `descriptor.component == nil`. Component scopes exclude
+it. Path scopes and `.repository` still include it.
+
+`.productionSources` uses a directory convention: it excludes `Tests/` at the
+repository root. It does not inspect build targets. Projects can use explicit
+paths or a custom predicate for other layouts.
+
+`Rules.files`, `Rules.each`, and `Rules.assert` apply scopes to their subjects.
+A scoped `Rules.repository` supplies selected subjects and the full context as
+separate arguments. Its diagnostics must anchor selected files. See
+[repository rules](rule-factories.md#repository-rule) for that contract.
+
 ## Lexical Scopes
 
 `SyntaxScope` selects nodes inside each file:

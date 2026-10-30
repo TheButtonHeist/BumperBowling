@@ -110,7 +110,7 @@ When a rule needs more than kind membership, Bumper Bowling composes over real S
 
 ```swift
 variableDecl.bumper.kind
-variableDecl.bumper.isMutableBinding
+variableDecl.bumper.isMutable
 variableDecl.bumper.bindingNames
 variableDecl.bumper.explicitTypeNames
 variableDecl.bumper.storedProperties

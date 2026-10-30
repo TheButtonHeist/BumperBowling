@@ -34,7 +34,7 @@ public struct SourceFileContext: Sendable {
         descriptor.path
     }
 
-    public var component: ComponentID {
+    public var component: ComponentID? {
         descriptor.component
     }
 

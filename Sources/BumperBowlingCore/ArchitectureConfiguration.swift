@@ -10,7 +10,7 @@ public struct ArchitectureConfiguration: Equatable, Sendable, Codable {
     public init(
         includedPaths: [String] = ["Sources"],
         excludedPaths: [String] = [".build", "DerivedData"],
-        components: [ComponentConfiguration],
+        components: [ComponentConfiguration] = [],
         rules: RuleConfiguration = RuleConfiguration()
     ) {
         self.includedPaths = includedPaths

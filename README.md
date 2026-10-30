@@ -12,11 +12,15 @@ A feature has `State`, `Action`, and `View`. Dependencies point toward Domain.
 Only `AppBootstrap` constructs live services. Every SwiftUI view can be
 constructed in at least one preview.
 
-Those rules are architecture. When they live only in documentation and code
+These are project policies. When they live only in documentation and code
 review, every developer or agent has to rediscover them.
 
 Bumper Bowling turns them into Swift rules with source-level failures. You
 define the lane. Bumper Bowling catches changes that leave it.
+
+Rules can inspect any SwiftSyntax node type and combine observations across
+files. The architecture factories provide short forms for common policies.
+Custom rules use the same evaluator, tests, and reports.
 
 Take the preview rule. The compiler knows that `CheckoutView` conforms to
 `View`, but it cannot require a preview that constructs it.
@@ -35,27 +39,24 @@ Write that rule in Swift:
 import BumperBowlingCore
 import SwiftSyntax
 
-let swiftUIPreviews = Rules.files(
-    "app.swiftui_preview",
+let swiftUIPreviews = Rules.each(
+    structs().inheriting("View"),
+    id: "app.swiftui_preview",
     summary: "Each SwiftUI view is constructed by at least one preview.",
     scope: .under("Sources/Features")
-) { file in
-    let views = structs().inheriting("View").matches(in: file)
-    let previews = macroExpansions().named("Preview").matches(in: file)
-
-    return views.compactMap { view in
-        let viewName = view.node.name.text
-        let hasPreview = previews.contains { preview in
-            preview.node
-                .descendants(of: FunctionCallExprSyntax.self)
-                .map(\.calleeName)
-                .contains(viewName)
-        }
-
-        return hasPreview ? nil : view.failure(
-            message: "\(viewName) needs a #Preview that constructs \(viewName)."
-        )
+) { view in
+    let previews = macroExpansions().named("Preview").matches(in: view.file)
+    let viewName = view.node.name.text
+    let hasPreview = previews.contains { preview in
+        preview.node
+            .descendants(of: FunctionCallExprSyntax.self)
+            .map(\.calleeName)
+            .contains(viewName)
     }
+
+    return hasPreview ? [] : [view.failure(
+        message: "\(viewName) needs a #Preview that constructs \(viewName)."
+    )]
 }
 ```
 
@@ -68,7 +69,25 @@ SwiftSyntax found the declarations, inheritance clause, macro, and constructor
 call. Bumper Bowling composed those observations into one scoped rule with
 source evidence.
 
-That same composition can enforce the shape of an app.
+This example matches explicit `View` inheritance and constructor spellings
+inside a preview in the same file. It does not resolve compiler type identity.
+The [rule recipes](docs/RULE_RECIPES.md) also cover arbitrary syntax,
+requirements inside each type, and relationships across files.
+
+## Syntax Rules Without An Architecture
+
+A project can run syntax rules without declaring components:
+
+```swift
+let bumper = BumperProject {
+    Included { "Sources" }
+    Rules { swiftUIPreviews }
+}
+```
+
+Every included Swift file reaches syntax analysis, including files without a
+component owner. Architecture declarations add ownership and dependency policy.
+Coverage checks can report unowned files without hiding them from custom rules.
 
 ## Give The Architecture A Vocabulary
 
@@ -168,6 +187,8 @@ SwiftSyntax -> typed observations -> scopes -> rules -> source evidence
 | Reusable architecture patterns | `ComponentRequirement` and `ComponentShape` |
 | Common ownership and construction rules | `Rules.*` shapers |
 | Typed syntax matches | `SyntaxQuery` |
+| Requirements for each typed match | `Rules.each` |
+| Counts per file or across selected files | `Rules.assert` |
 | Rules over each file | `Rules.files` |
 | Repository-wide analysis | `BuiltInFacts` and `Rules.repository` |
 | Full SwiftSyntax access | `Rules.visitor` and `SyntaxVisitor` |

@@ -171,7 +171,7 @@ struct BumperCommandsTests {
     }
 
     @Test
-    func lintRunsOptedInCustomRuleWorker() async throws {
+    func lintRunsCustomRulesWithoutArchitecture() async throws {
         let root = try makeRepository(source: """
         import Foundation
         import UIKit
@@ -190,10 +190,15 @@ struct BumperCommandsTests {
         #expect(violation.path.rawValue == "Sources/BumperBowlingCore/Thing.swift")
         #expect(violation.message.contains("UIKit"))
         #expect(violation.evidence?.expectation == "allowed imports: Foundation")
+        try "import Foundation\npublic struct Thing {}".write(
+            to: root.appendingPathComponent("Sources/BumperBowlingCore/Thing.swift"), atomically: true, encoding: .utf8
+        )
+        let passing = try await BumperCommands.lint(root: root)
+        #expect(passing.violations.isEmpty)
     }
 
     @Test
-    func lintRunsOptedInCustomSyntaxRuleWorker() async throws {
+    func lintRunsCustomSyntaxRulesWithoutArchitecture() async throws {
         let root = try makeRepository(source: """
         public struct Thing {
             public func pair() -> (String, Int) {
@@ -325,13 +330,6 @@ struct BumperCommandsTests {
                 "Sources"
             }
 
-            Architecture {
-                Component(.core) {
-                    Owns("Sources/BumperBowlingCore")
-                    Modules("BumperBowlingCore")
-                }
-            }
-
             Rules {
                 projectRules
             }
@@ -361,7 +359,7 @@ struct BumperCommandsTests {
                     .map { occurrence in
                         RuleFailure(
                             path: occurrence.path,
-                            message: "\\(occurrence.component.rawValue) imports non-allowlisted module \\(occurrence.module.rawValue)",
+                            message: "\\(occurrence.component?.rawValue ?? "Unowned source") imports non-allowlisted module \\(occurrence.module.rawValue)",
                             evidence: ViolationEvidence(
                                 observed: occurrence.module.rawValue,
                                 expectation: "allowed imports: Foundation"

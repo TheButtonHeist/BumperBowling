@@ -26,7 +26,7 @@ struct SyntaxCapabilityTests {
         )
 
         let contexts = Dictionary(uniqueKeysWithValues: functions().matches(in: file).map { match in
-            (match.node.name.text, match.node.bumper.lexicalContext)
+            (match.node.name.text, match.lexicalContext)
         })
         #expect(contexts["fileLevel"]?.placement == .fileScope)
         #expect(contexts["load"]?.placement == .typeMember)
@@ -69,28 +69,28 @@ struct SyntaxCapabilityTests {
         #expect(alias.node.bumper.aliasedTypeShape.references("Payload"))
 
         let variableMatches = variables().matches(in: file)
-        let onChange = try #require(variableMatches.first { $0.node.bumper.bindingNames == ["onChange"] })
+        let onChange = try #require(variableMatches.first { $0.bindingNames == ["onChange"] })
         let onChangeShape = try #require(onChange.node.bindings.first?.bumper.explicitTypeShape)
         #expect(onChangeShape.isFunction)
         #expect(onChangeShape.attributes == ["MainActor"])
         #expect(onChangeShape.outerFunctionAttributes == ["MainActor"])
-        let handler = try #require(variableMatches.first { $0.node.bumper.bindingNames == ["handler"] })
+        let handler = try #require(variableMatches.first { $0.bindingNames == ["handler"] })
         #expect(handler.node.bindings.first?.bumper.explicitTypeShape?.outerTypeName == "Handler")
         let optionalHandler = try #require(variableMatches.first {
-            $0.node.bumper.bindingNames == ["optionalHandler"]
+            $0.bindingNames == ["optionalHandler"]
         })
         #expect(optionalHandler.node.bindings.first?.bumper.explicitTypeShape?.outerTypeName == "Handler")
         let optionalFunction = try #require(variableMatches.first {
-            $0.node.bumper.bindingNames == ["optionalFunction"]
+            $0.bindingNames == ["optionalFunction"]
         })
         #expect(optionalFunction.node.bindings.first?.bumper.explicitTypeShape?.isFunction == true)
         let nestedCallback = try #require(variableMatches.first {
-            $0.node.bumper.bindingNames == ["nestedCallback"]
+            $0.bindingNames == ["nestedCallback"]
         })
         let nestedShape = try #require(nestedCallback.node.bindings.first?.bumper.explicitTypeShape)
         #expect(nestedShape.attributes == ["Sendable"])
         #expect(nestedShape.outerFunctionAttributes.isEmpty)
-        let qualified = try #require(variableMatches.first { $0.node.bumper.bindingNames == ["qualified"] })
+        let qualified = try #require(variableMatches.first { $0.bindingNames == ["qualified"] })
         let qualifiedShape = try #require(qualified.node.bindings.first?.bumper.explicitTypeShape)
         #expect(qualifiedShape.references("Payload"))
         #expect(qualifiedShape.outerTypeName == "Payload")
