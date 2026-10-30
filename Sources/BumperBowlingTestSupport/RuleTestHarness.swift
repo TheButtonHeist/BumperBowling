@@ -1,5 +1,4 @@
 import BumperBowlingCore
-import Foundation
 
 /// Evaluates exactly one rule over an in-memory repository and returns the
 /// same structured report the engine and CLI use. Framework-neutral: no
@@ -16,22 +15,15 @@ public struct RuleTestHarness: Sendable {
         self.rules = rules
     }
 
-    public func evaluate(_ repository: VirtualRepository) throws -> RuleReport {
+    public func evaluate(_ files: [SourceInput]) throws -> RuleReport {
         try rules.evaluate(
-            configuration: configuration(for: repository),
-            repository: RepositorySyntax(
-                files: repository.files.map { file in
-                    SourceFileContext(
-                        descriptor: SourceFileDescriptor(path: file.path, component: file.component),
-                        source: file.source
-                    )
-                }
-            )
+            configuration: configuration(for: files),
+            repository: RepositorySyntax(input: RepositoryInput(files: files))
         )
     }
 
-    private func configuration(for repository: VirtualRepository) -> ArchitectureConfiguration {
-        let componentPaths = Dictionary(grouping: repository.files, by: \.component)
+    private func configuration(for files: [SourceInput]) -> ArchitectureConfiguration {
+        let componentPaths = Dictionary(grouping: files, by: \.component)
         return ArchitectureConfiguration(
             components: componentPaths
                 .compactMap { component, files in

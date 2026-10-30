@@ -136,13 +136,13 @@ struct RuleEngineTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Core/Thing.swift",
                     component: "core",
                     source: "func pair() -> (String, Int) { (\"id\", 1) }"
-                )
-            }
+                ),
+            ]
         )
 
         let violation = try #require(report.violations.first)
@@ -204,9 +204,9 @@ struct RuleEngineTests {
 
         #expect(throws: RuleEvaluationError.duplicateRuleID(RuleID("dup.rule"))) {
             _ = try RuleTestHarness(rules).evaluate(
-                VirtualRepository {
-                    VirtualSourceFile.swift("Sources/Core/A.swift", component: "core", source: "struct A {}")
-                }
+                [
+                    SourceInput.swift("Sources/Core/A.swift", component: "core", source: "struct A {}"),
+                ]
             )
         }
     }
@@ -229,9 +229,9 @@ struct RuleEngineTests {
 
         #expect(throws: RuleEvaluationError.self) {
             _ = try harness.evaluate(
-                VirtualRepository {
-                    VirtualSourceFile.swift("Sources/Core/A.swift", component: "core", source: "struct A {}")
-                }
+                [
+                    SourceInput.swift("Sources/Core/A.swift", component: "core", source: "struct A {}"),
+                ]
             )
         }
     }
@@ -246,10 +246,10 @@ struct RuleEngineTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Scoped/In.swift", component: "core", source: "struct InScope {}")
-                VirtualSourceFile.swift("Sources/Other/Out.swift", component: "core", source: "struct OutOfScope {}")
-            }
+            [
+                SourceInput.swift("Sources/Scoped/In.swift", component: "core", source: "struct InScope {}"),
+                SourceInput.swift("Sources/Other/Out.swift", component: "core", source: "struct OutOfScope {}"),
+            ]
         )
 
         #expect(report.violations.map(\.path.rawValue) == ["Sources/Scoped/In.swift"])

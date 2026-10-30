@@ -12,22 +12,22 @@ struct PatternAuthoringTests {
             pattern, cardinality: .exactly(1), counting: counting,
             id: "environments.one", summary: "One environment struct per counting unit."
         ))
-        let first = VirtualSourceFile.swift("Sources/A.swift", component: "app", source: "struct AppEnvironment {}")
-        let second = VirtualSourceFile.swift("Sources/B.swift", component: "app", source: "struct TestEnvironment {}")
-        let empty = VirtualSourceFile.swift("Sources/B.swift", component: "app", source: "struct B {}")
-        let passing = try harness.evaluate(VirtualRepository { first; counting == .perFile ? second : empty })
+        let first = SourceInput.swift("Sources/A.swift", component: "app", source: "struct AppEnvironment {}")
+        let second = SourceInput.swift("Sources/B.swift", component: "app", source: "struct TestEnvironment {}")
+        let empty = SourceInput.swift("Sources/B.swift", component: "app", source: "struct B {}")
+        let passing = try harness.evaluate([first, counting == .perFile ? second : empty])
         #expect(passing.violations.isEmpty)
 
-        let failingFiles: [VirtualSourceFile] = counting == .perFile
+        let failingFiles: [SourceInput] = counting == .perFile
             ? [.swift("Sources/A.swift", component: "app", source: "struct AppEnvironment {}\nstruct ExtraEnvironment {}"), empty]
             : [first, second]
-        let failing = try harness.evaluate(VirtualRepository(files: failingFiles))
-        let reversed = try harness.evaluate(VirtualRepository(files: failingFiles.reversed()))
+        let failing = try harness.evaluate(failingFiles)
+        let reversed = try harness.evaluate(Array(failingFiles.reversed()))
         #expect(failing.violations == reversed.violations)
         if counting == .perFile {
             let defaultHarness = RuleTestHarness(Rules.assert(pattern, cardinality: .exactly(1), id: "environments.one", summary: "One environment struct per counting unit."))
-            #expect(try defaultHarness.evaluate(VirtualRepository { first; second }).violations.isEmpty)
-            #expect(try defaultHarness.evaluate(VirtualRepository(files: failingFiles)).violations == failing.violations)
+            #expect(try defaultHarness.evaluate([first, second]).violations.isEmpty)
+            #expect(try defaultHarness.evaluate(failingFiles).violations == failing.violations)
             #expect(failing.violations.count == 2)
             #expect(failing.contains(ViolationMatcher(
                 id: "environments.one", path: "Sources/A.swift", location: SourcePosition(line: 2, column: 1),
@@ -52,15 +52,15 @@ struct PatternAuthoringTests {
         ) { violation in
             "\(violation.counting): found \(violation.observedCount)."
         })
-        let first = VirtualSourceFile.swift("Sources/A.swift", component: "app", source: "typealias A = Int")
-        let second = VirtualSourceFile.swift("Sources/B.swift", component: "app", source: "typealias B = Int")
-        #expect(try harness.evaluate(VirtualRepository { first; second }).violations.isEmpty)
-        let files: [VirtualSourceFile] = [
+        let first = SourceInput.swift("Sources/A.swift", component: "app", source: "typealias A = Int")
+        let second = SourceInput.swift("Sources/B.swift", component: "app", source: "typealias B = Int")
+        #expect(try harness.evaluate([first, second]).violations.isEmpty)
+        let files: [SourceInput] = [
             .swift("Sources/A.swift", component: "app", source: "struct A {}"), second,
             .swift("Tests/Extra.swift", component: "app", source: "typealias Extra = Int"),
         ]
-        let failing = try harness.evaluate(VirtualRepository(files: files))
-        #expect(failing.violations == (try harness.evaluate(VirtualRepository(files: files.reversed()))).violations)
+        let failing = try harness.evaluate(files)
+        #expect(failing.violations == (try harness.evaluate(Array(files.reversed()))).violations)
         #expect(failing.violations.count == 1)
         #expect(failing.contains(ViolationMatcher(
             id: "aliases.minimum", path: "Sources/A.swift", message: .exact("repository: found 1."),
@@ -74,12 +74,12 @@ struct PatternAuthoringTests {
         let harness = RuleTestHarness(Rules.assert(
             typeAliases(), cardinality: cardinality, counting: .repository, id: "aliases.maximum"
         ))
-        let empty = VirtualSourceFile.swift("Sources/Empty.swift", component: "app", source: "struct Empty {}")
-        #expect(try harness.evaluate(VirtualRepository { empty }).violations.isEmpty)
-        let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/A.swift", component: "app", source: "typealias A = Int")
-            VirtualSourceFile.swift("Sources/B.swift", component: "app", source: "typealias B = Int\ntypealias C = Int")
-        })
+        let empty = SourceInput.swift("Sources/Empty.swift", component: "app", source: "struct Empty {}")
+        #expect(try harness.evaluate([empty]).violations.isEmpty)
+        let failing = try harness.evaluate([
+            SourceInput.swift("Sources/A.swift", component: "app", source: "typealias A = Int"),
+            SourceInput.swift("Sources/B.swift", component: "app", source: "typealias B = Int\ntypealias C = Int"),
+        ])
         #expect(failing.violations.count == (cardinality == .none ? 3 : 2))
         for line in [1, 2] {
             #expect(failing.contains(ViolationMatcher(
@@ -95,13 +95,13 @@ struct PatternAuthoringTests {
             structs(), cardinality: .atLeast(1), counting: counting,
             id: "scope.required", scope: .under("Sources/Core")
         ))
-        #expect(try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Core/Model.swift", component: "core", source: "struct Model {}")
-        }).violations.isEmpty)
+        #expect(try harness.evaluate([
+            SourceInput.swift("Sources/Core/Model.swift", component: "core", source: "struct Model {}"),
+        ]).violations.isEmpty)
         #expect(throws: RuleEvaluationError.emptyRuleScope("scope.required")) {
-            try harness.evaluate(VirtualRepository {
-                VirtualSourceFile.swift("Sources/Other/Model.swift", component: "other", source: "struct Model {}")
-            })
+            try harness.evaluate([
+                SourceInput.swift("Sources/Other/Model.swift", component: "other", source: "struct Model {}"),
+            ])
         }
     }
 
@@ -109,7 +109,7 @@ struct PatternAuthoringTests {
     func zeroRequirementsPermitEmptyRepositories(cardinality: SyntaxCardinality) throws {
         for counting in [SyntaxCounting.perFile, .repository] {
             let harness = RuleTestHarness(Rules.assert(structs(), cardinality: cardinality, counting: counting, id: "scope.zero"))
-            #expect(try harness.evaluate(VirtualRepository {}).violations.isEmpty)
+            #expect(try harness.evaluate([]).violations.isEmpty)
         }
     }
 
@@ -117,7 +117,7 @@ struct PatternAuthoringTests {
     func negativeCardinalitiesFailExplicitly(cardinality: SyntaxCardinality) throws {
         let harness = RuleTestHarness(Rules.assert(structs(), cardinality: cardinality, id: "count.invalid"))
         #expect(throws: RuleEvaluationError.invalidSyntaxCardinality("count.invalid", -1)) {
-            try harness.evaluate(VirtualRepository {})
+            try harness.evaluate([])
         }
     }
 
@@ -128,14 +128,14 @@ struct PatternAuthoringTests {
             if match.node.name.text == "Broken" { throw RecipeError.incomplete }
             return []
         })
-        #expect(try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Core/Good.swift", component: "core", source: "struct Good {}")
-            VirtualSourceFile.swift("Sources/Other/Broken.swift", component: "other", source: "struct Broken {}")
-        }).violations.isEmpty)
+        #expect(try harness.evaluate([
+            SourceInput.swift("Sources/Core/Good.swift", component: "core", source: "struct Good {}"),
+            SourceInput.swift("Sources/Other/Broken.swift", component: "other", source: "struct Broken {}"),
+        ]).violations.isEmpty)
         #expect(throws: RuleEvaluationError.ruleFailed("each.analysis", "incomplete")) {
-            try harness.evaluate(VirtualRepository {
-                VirtualSourceFile.swift("Sources/Core/Broken.swift", component: "core", source: "struct Broken {}")
-            })
+            try harness.evaluate([
+                SourceInput.swift("Sources/Core/Broken.swift", component: "core", source: "struct Broken {}"),
+            ])
         }
     }
 }

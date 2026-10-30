@@ -396,19 +396,20 @@ func flagsForeignDeclarations() throws {
     let rule = Rules.singleDeclaration("AccessibilityTarget", owner: "Sources/Plans")
 
     let report = try RuleTestHarness(rule).evaluate(
-        VirtualRepository {
-            VirtualSourceFile.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}")
-            VirtualSourceFile.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}")
-        }
+        [
+            SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
+            SourceInput.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}"),
+        ]
     )
 
     #expect(report.violations.map(\.path.rawValue) == ["Sources/Score/Foreign.swift"])
 }
 ```
 
-`VirtualSourceFile.swift(_:component:source:)` accepts strings, `ComponentID`,
-or your project's `ComponentKey` enum. The harness is framework-neutral — it
-works under Swift Testing and XCTest alike.
+Pass an array of `SourceInput` values. The test-support convenience
+`SourceInput.swift(_:component:source:)` validates string paths and optional
+component names. Use `SourceInput(path:component:source:)` for typed values.
+The harness works under Swift Testing and XCTest.
 
 ## Profiling Rules
 

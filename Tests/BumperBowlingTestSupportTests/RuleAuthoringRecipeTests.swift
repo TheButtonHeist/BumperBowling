@@ -13,15 +13,15 @@ struct RuleAuthoringRecipeTests {
             scope: .under("Sources/Analytics")
         ) { _ in "Use a named analytics payload instead of a dictionary literal." }
         let harness = RuleTestHarness(rule)
-        let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Analytics/Event.swift", source: "let payload = Event(name: \"tap\")")
-            VirtualSourceFile.swift("Sources/Other/Lookup.swift", source: "let lookup = [\"name\": \"tap\"]")
-        })
+        let passing = try harness.evaluate([
+            SourceInput.swift("Sources/Analytics/Event.swift", source: "let payload = Event(name: \"tap\")"),
+            SourceInput.swift("Sources/Other/Lookup.swift", source: "let lookup = [\"name\": \"tap\"]"),
+        ])
         #expect(passing.violations.isEmpty)
 
-        let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Analytics/Event.swift", source: "let payload = [\"name\": \"tap\"]")
-        })
+        let failing = try harness.evaluate([
+            SourceInput.swift("Sources/Analytics/Event.swift", source: "let payload = [\"name\": \"tap\"]"),
+        ])
         #expect(failing.violations.count == 1)
         #expect(failing.contains(ViolationMatcher(
             id: "analytics.named_payloads", path: "Sources/Analytics/Event.swift",
@@ -32,22 +32,22 @@ struct RuleAuthoringRecipeTests {
 
     @Test func everyFeatureHasItsOwnDirectMembers() throws {
         let harness = RuleTestHarness(featureMembers)
-        let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Features/Features.swift", source: """
+        let passing = try harness.evaluate([
+            SourceInput.swift("Sources/Features/Features.swift", source: """
             struct CheckoutFeature { struct State {}; enum Action {} }
             struct SearchFeature { struct State {}; enum Action {} }
             struct Unrelated {}
-            """)
-        })
+            """),
+        ])
         #expect(passing.violations.isEmpty)
 
-        let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Features/Features.swift", source: """
+        let failing = try harness.evaluate([
+            SourceInput.swift("Sources/Features/Features.swift", source: """
             struct CheckoutFeature { struct Nested { struct State {}; enum Action {} } }
             struct SearchFeature { struct State {} }
             struct Unrelated { enum Action {} }
-            """)
-        })
+            """),
+        ])
         #expect(failing.violations.count == 3)
         for (line, name, missing) in [(1, "CheckoutFeature", "State"), (1, "CheckoutFeature", "Action"), (2, "SearchFeature", "Action")] {
             #expect(failing.violations(matching: ViolationMatcher(
@@ -61,26 +61,26 @@ struct RuleAuthoringRecipeTests {
 
     @Test func routesHaveExactlyOneRegistrationAcrossFiles() throws {
         let harness = RuleTestHarness(routeRegistrations)
-        let routes = VirtualSourceFile.swift("Sources/App/Routes.swift", source: """
+        let routes = SourceInput.swift("Sources/App/Routes.swift", source: """
         enum AppRoute {
             case home
             case detail
         }
         """)
-        let passing = try harness.evaluate(VirtualRepository {
-            routes
-            VirtualSourceFile.swift("Sources/App/Home.swift", source: "register(.home)")
-            VirtualSourceFile.swift("Sources/App/Detail.swift", source: "register(.detail)")
-            VirtualSourceFile.swift("Sources/Other/Routes.swift", source: "enum AppRoute { case unrelated }")
-        })
+        let passing = try harness.evaluate([
+            routes,
+            SourceInput.swift("Sources/App/Home.swift", source: "register(.home)"),
+            SourceInput.swift("Sources/App/Detail.swift", source: "register(.detail)"),
+            SourceInput.swift("Sources/Other/Routes.swift", source: "enum AppRoute { case unrelated }"),
+        ])
         #expect(passing.violations.isEmpty)
 
-        let failing = try harness.evaluate(VirtualRepository {
-            routes
-            VirtualSourceFile.swift("Sources/App/Home.swift", source: "register(.home)")
-            VirtualSourceFile.swift("Sources/App/Duplicate.swift", source: "register(.home)")
-            VirtualSourceFile.swift("Sources/App/Other.swift", source: "other.register(.detail)")
-        })
+        let failing = try harness.evaluate([
+            routes,
+            SourceInput.swift("Sources/App/Home.swift", source: "register(.home)"),
+            SourceInput.swift("Sources/App/Duplicate.swift", source: "register(.home)"),
+            SourceInput.swift("Sources/App/Other.swift", source: "other.register(.detail)"),
+        ])
         #expect(failing.violations.count == 2)
         for (line, route, count) in [(2, "home", 2), (3, "detail", 0)] {
             #expect(failing.violations(matching: ViolationMatcher(
@@ -96,18 +96,18 @@ struct RuleAuthoringRecipeTests {
         let harness = RuleTestHarness(Rules.importOwnership(
             ["UI"], allowed: .component(RecipeComponent.ui), id: "components.ui_imports"
         ))
-        let ui = VirtualSourceFile.swift("Sources/UI/Screen.swift", component: "ui", source: "import UI")
-        let passing = try harness.evaluate(VirtualRepository {
-            ui
-            VirtualSourceFile.swift("Sources/Domain/Model.swift", component: "domain", source: "struct Model {}")
-            VirtualSourceFile.swift("Sources/Other.swift", source: "struct Other {}")
-        })
+        let ui = SourceInput.swift("Sources/UI/Screen.swift", component: "ui", source: "import UI")
+        let passing = try harness.evaluate([
+            ui,
+            SourceInput.swift("Sources/Domain/Model.swift", component: "domain", source: "struct Model {}"),
+            SourceInput.swift("Sources/Other.swift", source: "struct Other {}"),
+        ])
         #expect(passing.violations.isEmpty)
-        let failing = try harness.evaluate(VirtualRepository {
-            ui
-            VirtualSourceFile.swift("Sources/Domain/Model.swift", component: "domain", source: "import UI")
-            VirtualSourceFile.swift("Sources/Other.swift", source: "import UI")
-        })
+        let failing = try harness.evaluate([
+            ui,
+            SourceInput.swift("Sources/Domain/Model.swift", component: "domain", source: "import UI"),
+            SourceInput.swift("Sources/Other.swift", source: "import UI"),
+        ])
         #expect(failing.violations.count == 2)
         for path in ["Sources/Domain/Model.swift", "Sources/Other.swift"] {
             #expect(failing.contains(ViolationMatcher(

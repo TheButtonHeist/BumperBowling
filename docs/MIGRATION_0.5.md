@@ -39,8 +39,8 @@ enum so `Component(.core)` / `MayDependOn(.core)` are compiler-checked.
 ### Generic source rules and scoped subjects
 
 Component ownership is now optional source metadata. `SourceInput`,
-`SourceFileDescriptor`, `SourceFileFacts`, source occurrences, and virtual source
-fixtures use `ComponentID?`. Existing owned inputs still decode. Unowned wire
+`SourceFileDescriptor`, `SourceFileFacts`, and source occurrences use
+`ComponentID?`. Existing owned inputs still decode. Unowned wire
 inputs can omit the component field.
 
 Use `component?.rawValue` for an optional display value. For component-specific
@@ -93,3 +93,19 @@ one cached `BumperProjectRunner` with two modes: `describe` emits the
 architecture configuration as JSON; `evaluate` reads `RepositoryInput` from
 stdin and emits one `RuleReport`. Cache locations honor `BUMPER_CACHE_DIR`
 unchanged; caches from earlier versions are keyed differently and rebuild once.
+
+## Rule test fixtures
+
+Pass `[SourceInput]` directly to `RuleTestHarness.evaluate(_:)`.
+`VirtualSourceFile`, `VirtualRepository`, and `VirtualRepositoryBuilder` are
+removed. Use array literals, `map`, and ordinary conditionals for fixtures.
+
+```swift
+let report = try RuleTestHarness(rule).evaluate([
+    SourceInput.swift("Sources/App.swift", component: "app", source: "struct App {}")
+])
+```
+
+`SourceInput.swift` is a test-support convenience for validated string paths
+and optional component names. Use the existing `SourceInput` initializer for
+typed paths and `ComponentID` values.

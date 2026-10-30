@@ -37,10 +37,7 @@ let package = Package(
         ),
         .target(
             name: "BumperBowlingTestSupport",
-            dependencies: [
-                "BumperBowlingCore",
-                .product(name: "SwiftParser", package: "swift-syntax"),
-            ],
+            dependencies: ["BumperBowlingCore"],
             swiftSettings: strictSwiftSettings
         ),
         .executableTarget(

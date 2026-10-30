@@ -81,13 +81,13 @@ struct SpecSpellingTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                .swift(
-                    "Sources/Core/Screen.swift",
-                    component: AppComponent.core,
+            [
+                .init(
+                    path: "Sources/Core/Screen.swift",
+                    component: try ComponentID(AppComponent.core.rawValue),
                     source: "import UIKit"
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.rule.id) == ["app.import_allow_list"])
@@ -111,13 +111,13 @@ struct SpecSpellingTests {
         )
 
         let report = try RuleTestHarness(canonicalHierarchyTraversal).evaluate(
-            VirtualRepository {
-                .swift(
-                    "Sources/Invalid.swift",
-                    component: AppComponent.core,
+            [
+                .init(
+                    path: "Sources/Invalid.swift",
+                    component: try ComponentID(AppComponent.core.rawValue),
                     source: recursiveSource
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.rule.id) == ["app.canonical_hierarchy"])

@@ -22,18 +22,18 @@ struct DownstreamExtensibilityTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/App/Feature.swift",
                     component: "app",
                     source: "func f(value: Int?) -> Int { value! }"
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Tests/AppTests/FeatureTests.swift",
                     component: "app",
                     source: "func t(value: Int?) -> Int { value! }"
-                )
-            }
+                ),
+            ]
         )
 
         let violation = try #require(report.violations.first)
@@ -63,10 +63,10 @@ struct DownstreamExtensibilityTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/App/GoodView.swift", component: "app", source: "struct GoodView {}")
-                VirtualSourceFile.swift("Sources/App/BadScreen.swift", component: "app", source: "struct BadScreen {}")
-            }
+            [
+                SourceInput.swift("Sources/App/GoodView.swift", component: "app", source: "struct GoodView {}"),
+                SourceInput.swift("Sources/App/BadScreen.swift", component: "app", source: "struct BadScreen {}"),
+            ]
         )
 
         #expect(report.violations.map(\.message) == ["BadScreen looks like a view but is not named one."])
@@ -83,16 +83,16 @@ struct DownstreamExtensibilityTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/App/Sync.swift",
                     component: "app",
                     source: """
                     func plain() {}
                     func fetch() async {}
                     """
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.message) == ["fetch is async."])
@@ -138,8 +138,8 @@ struct DownstreamExtensibilityTests {
                 )
             )]
         })
-        let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Model.swift", source: """
+        let passing = try harness.evaluate([
+            SourceInput.swift("Sources/Model.swift", source: """
             var global = 0
             struct Model {
                 let fixed = 0
@@ -147,11 +147,11 @@ struct DownstreamExtensibilityTests {
                 var accessor: Int { get { fixed } set {} }
                 func work() { var local = 0; local += 1 }
             }
-            """)
-        })
+            """),
+        ])
         #expect(passing.violations.isEmpty)
-        let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Model.swift", source: """
+        let failing = try harness.evaluate([
+            SourceInput.swift("Sources/Model.swift", source: """
             var global = 0
             struct Model {
                 var first = 0, second = 1
@@ -160,8 +160,8 @@ struct DownstreamExtensibilityTests {
                 var computed: Int { fixed }
                 func work() { var local = 0; local += 1 }
             }
-            """)
-        })
+            """),
+        ])
         #expect(failing.violations.count == 2)
         for (line, names) in [(3, "first, second"), (4, "observed")] {
             #expect(failing.violations(matching: ViolationMatcher(
@@ -200,9 +200,9 @@ struct DownstreamExtensibilityTests {
         }
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/App/Screen.swift", component: "app", source: "import UIKit")
-            }
+            [
+                SourceInput.swift("Sources/App/Screen.swift", component: "app", source: "import UIKit"),
+            ]
         )
 
         let encoded = try JSONEncoder().encode(report)

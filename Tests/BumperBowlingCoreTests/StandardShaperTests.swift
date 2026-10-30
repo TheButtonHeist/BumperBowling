@@ -13,18 +13,18 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Boundary/Adapter.swift",
                     component: "boundary",
                     source: "import UIKit"
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Sources/Core/Feature.swift",
                     component: "core",
                     source: "import Network\nimport Foundation"
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.path.rawValue) == ["Sources/Core/Feature.swift"])
@@ -39,18 +39,18 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Boundary/Adapter.swift",
                     component: "boundary",
                     source: "func bridge(_ value: Resource) { _ = value.unsafeHandle }"
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Sources/Core/Feature.swift",
                     component: "core",
                     source: "func leak(_ value: Resource) { _ = value.unsafeHandle }"
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.path.rawValue) == ["Sources/Core/Feature.swift"])
@@ -62,9 +62,9 @@ struct StandardShaperTests {
         let report = try RuleTestHarness(
             Rules.memberReferenceOwnership(["observe", "stop"], allowed: .under("Sources/Owner"), id: "lifecycle")
         ).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Elsewhere/Leak.swift", component: "core", source: "func leak(_ value: API) { value.observe(); value.stop() }")
-            }
+            [
+                SourceInput.swift("Sources/Elsewhere/Leak.swift", component: "core", source: "func leak(_ value: API) { value.observe(); value.stop() }"),
+            ]
         )
 
         #expect(report.violations.map(\.ruleID) == ["lifecycle", "lifecycle"])
@@ -77,9 +77,9 @@ struct StandardShaperTests {
         let publicAPI = Rules.publicAPIOwnership(allowed: .under("Sources/API"), id: "public_owner")
         let spi = Rules.spiOwnership(allowed: .under("Sources/Bridge"), id: "spi_owner")
         let report = try RuleTestHarness(RuleSet { ownership; publicAPI; spi }).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Elsewhere/Leak.swift", component: "core", source: "struct ResultReceipt {}\npublic func leaked() {}\n@_spi(Bridge) func bridge() {}")
-            }
+            [
+                SourceInput.swift("Sources/Elsewhere/Leak.swift", component: "core", source: "struct ResultReceipt {}\npublic func leaked() {}\n@_spi(Bridge) func bridge() {}"),
+            ]
         )
 
         #expect(report.violations.map(\.ruleID) == ["receipt_owner", "public_owner", "spi_owner"])
@@ -90,9 +90,9 @@ struct StandardShaperTests {
         let types = Rules.disallowTypeReferences("Any", in: .repository, id: "no_any")
         let bools = Rules.maximumStoredProperties(matching: "Bool", maximum: 1, in: .repository, id: "bool_soup")
         let report = try RuleTestHarness(RuleSet { types; bools }).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Core/State.swift", component: "core", source: "struct State { let one: Bool; let two: Bool }\nfunc leak(_ value: Any) -> Any { value }")
-            }
+            [
+                SourceInput.swift("Sources/Core/State.swift", component: "core", source: "struct State { let one: Bool; let two: Bool }\nfunc leak(_ value: Any) -> Any { value }"),
+            ]
         )
 
         #expect(report.violations.map(\.ruleID) == ["bool_soup", "bool_soup", "no_any", "no_any"])
@@ -103,9 +103,9 @@ struct StandardShaperTests {
         let report = try RuleTestHarness(
             Rules.stateMachineShape(in: .repository, requiresAssociatedValueCase: true)
         ).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Core/State.swift", component: "core", source: "enum WorkflowState { case idle }")
-            }
+            [
+                SourceInput.swift("Sources/Core/State.swift", component: "core", source: "enum WorkflowState { case idle }"),
+            ]
         )
 
         #expect(report.violations.first?.message == "State enum has no associated-value case.")
@@ -119,9 +119,9 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}")
-            }
+            [
+                SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
+            ]
         )
 
         #expect(report.violations.isEmpty)
@@ -135,11 +135,11 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}")
-                VirtualSourceFile.swift("Sources/Plans/Duplicate.swift", component: "plans", source: "struct AccessibilityTarget {}")
-                VirtualSourceFile.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}")
-            }
+            [
+                SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
+                SourceInput.swift("Sources/Plans/Duplicate.swift", component: "plans", source: "struct AccessibilityTarget {}"),
+                SourceInput.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}"),
+            ]
         )
 
         #expect(report.violations.count == 2)
@@ -158,9 +158,9 @@ struct StandardShaperTests {
 
         #expect(throws: RuleEvaluationError.self) {
             _ = try RuleTestHarness(rule).evaluate(
-                VirtualRepository {
-                    VirtualSourceFile.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}")
-                }
+                [
+                    SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
+                ]
             )
         }
     }
@@ -173,18 +173,18 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Builders/Builder.swift",
                     component: "core",
                     source: "func make() { _ = InterfaceObservation() }"
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Sources/Feature/Rogue.swift",
                     component: "core",
                     source: "func rogue() { _ = InterfaceObservation() }"
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.path.rawValue) == ["Sources/Feature/Rogue.swift"])
@@ -199,18 +199,18 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Boundary/Gate.swift",
                     component: "core",
                     source: "func load(data: Data) throws { _ = try JSONDecoder().decode(Thing.self, from: data) }"
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Sources/Feature/Leak.swift",
                     component: "core",
                     source: "func leak(data: Data) throws { _ = try JSONDecoder().decode(Thing.self, from: data) }"
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.path.rawValue) == ["Sources/Feature/Leak.swift"])
@@ -224,17 +224,17 @@ struct StandardShaperTests {
         )
 
         let harness = RuleTestHarness(rule)
-        let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = AccessibilityTarget")
-            VirtualSourceFile.swift("Sources/Feature/Model.swift", component: "core", source: "typealias Value = OtherTarget")
-        })
+        let passing = try harness.evaluate([
+            SourceInput.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = AccessibilityTarget"),
+            SourceInput.swift("Sources/Feature/Model.swift", component: "core", source: "typealias Value = OtherTarget"),
+        ])
         #expect(passing.violations.isEmpty)
 
         let report = try harness.evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = AccessibilityTarget")
-                VirtualSourceFile.swift("Sources/Feature/Alias.swift", component: "core", source: "typealias MyTarget = AccessibilityTarget")
-            }
+            [
+                SourceInput.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = AccessibilityTarget"),
+                SourceInput.swift("Sources/Feature/Alias.swift", component: "core", source: "typealias MyTarget = AccessibilityTarget"),
+            ]
         )
 
         #expect(report.violations.count == 1)
@@ -264,10 +264,10 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Traversal/Owner.swift", component: "score", source: recursiveSource)
-                VirtualSourceFile.swift("Sources/Score/Invalid.swift", component: "score", source: recursiveSource)
-            }
+            [
+                SourceInput.swift("Sources/Traversal/Owner.swift", component: "score", source: recursiveSource),
+                SourceInput.swift("Sources/Score/Invalid.swift", component: "score", source: recursiveSource),
+            ]
         )
 
         #expect(report.violations.map(\.rule.id) == ["canonical_hierarchy_traversal"])
@@ -294,9 +294,9 @@ struct StandardShaperTests {
             structuralCase: "leaf",
             owners: .under("Sources/Traversal")
         )
-        let repository = VirtualRepository {
-            VirtualSourceFile.swift("Sources/Feature/Walk.swift", component: "core", source: source)
-        }
+        let repository = [
+            SourceInput.swift("Sources/Feature/Walk.swift", component: "core", source: source),
+        ]
 
         let branchReport = try RuleTestHarness(branchRule).evaluate(repository)
         let leafReport = try RuleTestHarness(leafRule).evaluate(repository)
@@ -313,8 +313,8 @@ struct StandardShaperTests {
             owners: .under("Sources/Traversal")
         )
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Feature/WrongSubject.swift",
                     component: "core",
                     source: """
@@ -324,8 +324,8 @@ struct StandardShaperTests {
                         }
                     }
                     """
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.isEmpty)
@@ -339,8 +339,8 @@ struct StandardShaperTests {
             owners: .under("Sources/Traversal")
         )
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Feature/Tree.swift",
                     component: "core",
                     source: """
@@ -354,8 +354,8 @@ struct StandardShaperTests {
                         }
                     }
                     """
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.count == 1)
@@ -370,8 +370,8 @@ struct StandardShaperTests {
             owners: .under("Sources/Traversal")
         )
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Feature/Unstructured.swift",
                     component: "core",
                     source: """
@@ -380,8 +380,8 @@ struct StandardShaperTests {
                         visit(tree: tree)
                     }
                     """
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.isEmpty)
@@ -396,8 +396,8 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Score/Mutual.swift",
                     component: "score",
                     source: """
@@ -411,8 +411,8 @@ struct StandardShaperTests {
                         }
                     }
                     """
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Sources/Score/OtherReceiver.swift",
                     component: "score",
                     source: """
@@ -424,8 +424,8 @@ struct StandardShaperTests {
                         }
                     }
                     """
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.path.rawValue) == [
@@ -443,18 +443,18 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift(
+            [
+                SourceInput.swift(
                     "Sources/Builders/Builder.swift",
                     component: "core",
                     source: "func make() { _ = InterfaceGraph() }"
-                )
-                VirtualSourceFile.swift(
+                ),
+                SourceInput.swift(
                     "Sources/Feature/Rogue.swift",
                     component: "core",
                     source: "func rogue() { _ = InterfaceGraph() }"
-                )
-            }
+                ),
+            ]
         )
 
         #expect(report.violations.map(\.path.rawValue) == ["Sources/Feature/Rogue.swift"])
@@ -469,11 +469,11 @@ struct StandardShaperTests {
         )
 
         let report = try RuleTestHarness(rule).evaluate(
-            VirtualRepository {
-                VirtualSourceFile.swift("Sources/Plans/Exprs.swift", component: "plans", source: "enum LiteralExpr {}")
-                VirtualSourceFile.swift("Sources/Score/Rogue.swift", component: "score", source: "struct CallExpr {}")
-                VirtualSourceFile.swift("Sources/Score/Unrelated.swift", component: "score", source: "struct Scorecard {}")
-            }
+            [
+                SourceInput.swift("Sources/Plans/Exprs.swift", component: "plans", source: "enum LiteralExpr {}"),
+                SourceInput.swift("Sources/Score/Rogue.swift", component: "score", source: "struct CallExpr {}"),
+                SourceInput.swift("Sources/Score/Unrelated.swift", component: "score", source: "struct Scorecard {}"),
+            ]
         )
 
         #expect(report.violations.map(\.path.rawValue) == ["Sources/Score/Rogue.swift"])

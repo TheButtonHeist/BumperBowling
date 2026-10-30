@@ -115,13 +115,13 @@ private let rawInputBoundary = Rules.files(
 @Test
 func acceptsOrdinaryApplicationInput() throws {
     let report = try RuleTestHarness(rawInputBoundary).evaluate(
-        VirtualRepository {
-            VirtualSourceFile.swift(
+        [
+            SourceInput.swift(
                 "Sources/App/Handler.swift",
                 component: "app",
                 source: "func handle(_ input: Int) {}"
-            )
-        }
+            ),
+        ]
     )
 
     #expect(report.violations.isEmpty)
@@ -130,13 +130,13 @@ func acceptsOrdinaryApplicationInput() throws {
 @Test
 func flagsRepositoryInputMutation() throws {
     let report = try RuleTestHarness(rawInputBoundary).evaluate(
-        VirtualRepository {
-            VirtualSourceFile.swift(
+        [
+            SourceInput.swift(
                 "Sources/App/Handler.swift",
                 component: "app",
                 source: "func handle(_ input: RepositoryInput) {}"
-            )
-        }
+            ),
+        ]
     )
 
     let violation = try #require(report.violations.first)

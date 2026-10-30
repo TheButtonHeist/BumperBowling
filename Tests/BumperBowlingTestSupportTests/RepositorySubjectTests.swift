@@ -14,15 +14,15 @@ struct RepositorySubjectTests {
                 }
             }
         })
-        #expect(try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Features/Good.swift", source: "struct Good {}")
-            VirtualSourceFile.swift("Sources/Other.swift", source: "struct Other {}")
-        }).violations.isEmpty)
+        #expect(try harness.evaluate([
+            SourceInput.swift("Sources/Features/Good.swift", source: "struct Good {}"),
+            SourceInput.swift("Sources/Other.swift", source: "struct Other {}"),
+        ]).violations.isEmpty)
         #expect(throws: RuleEvaluationError.diagnosticOutsideScope("scoped.diagnostics", "Sources/Other.swift")) {
-            try harness.evaluate(VirtualRepository {
-                VirtualSourceFile.swift("Sources/Features/Good.swift", source: "struct Good {}")
-                VirtualSourceFile.swift("Sources/Other.swift", source: "struct Broken {}")
-            })
+            try harness.evaluate([
+                SourceInput.swift("Sources/Features/Good.swift", source: "struct Good {}"),
+                SourceInput.swift("Sources/Other.swift", source: "struct Broken {}"),
+            ])
         }
     }
 
@@ -34,15 +34,15 @@ struct RepositorySubjectTests {
                 RuleFailure(path: file.path, message: "UI import in core.")
             }
         })
-        let unowned = VirtualSourceFile.swift("Sources/Unowned.swift", source: "import UI")
-        #expect(try harness.evaluate(VirtualRepository {
-            unowned
-            VirtualSourceFile.swift("Sources/Core/Good.swift", component: "core", source: "struct Good {}")
-        }).violations.isEmpty)
-        let failing = try harness.evaluate(VirtualRepository {
-            unowned
-            VirtualSourceFile.swift("Sources/Core/Bad.swift", component: "core", source: "import UI")
-        })
+        let unowned = SourceInput.swift("Sources/Unowned.swift", source: "import UI")
+        #expect(try harness.evaluate([
+            unowned,
+            SourceInput.swift("Sources/Core/Good.swift", component: "core", source: "struct Good {}"),
+        ]).violations.isEmpty)
+        let failing = try harness.evaluate([
+            unowned,
+            SourceInput.swift("Sources/Core/Bad.swift", component: "core", source: "import UI"),
+        ])
         #expect(failing.violations.count == 1)
         #expect(failing.contains(ViolationMatcher(
             id: "scoped.component", path: "Sources/Core/Bad.swift", message: .exact("UI import in core.")

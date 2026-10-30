@@ -394,9 +394,9 @@ See [SWIFTSYNTAX_SURFACE.md](SWIFTSYNTAX_SURFACE.md) for the current fact surfac
 Bumper Bowling follows a tiny version of SwiftLint's self-test pattern:
 
 - Rule fixtures use `↓` markers for expected violation locations.
-- Every rule can be tested in memory with `RuleTestHarness` and
-  `VirtualRepository` from `BumperBowlingTestSupport`, returning the same
-  `RuleReport` the engine and CLI produce.
+- Every rule can be tested in memory with `RuleTestHarness` from
+  `BumperBowlingTestSupport`. Pass an array of `SourceInput` values to receive
+  the same `RuleReport` the engine and CLI produce.
 - Command tests cover `scan` and `lint`.
 - A self-lint test runs Bumper Bowling against this repository and records error-level findings.
 
@@ -407,7 +407,7 @@ Add `SourceCoverage(.error)` to `Rules` to require exactly one component owner f
 
 The scanner inventories included source files before it resolves owners. Exclusions apply before inventory.
 Unowned Swift files produce findings with their paths and an instruction to add ownership or exclude the files.
-Unowned files do not enter SwiftSyntax or component-based rules.
+Unowned Swift files enter syntax analysis. Component scopes select only owned files.
 Ownership paths that match no included source files produce warnings, capped at the configured severity.
 Paths with only unsupported source languages produce notes, so an intentional Objective-C shim does not fail the coverage assertion.
 
