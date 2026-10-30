@@ -35,7 +35,13 @@ Compiler-backed analysis would let Bumper Bowling treat inferred `String`, `Any`
 
 ## Symbol And Module Truth
 
-SwiftSyntax sees imports and names. It does not resolve symbols or prove which module owns a referenced declaration.
+SwiftSyntax sees imports and names. It does not establish compiler symbol identity or prove which module owns a referenced declaration.
+
+`LexicalTypeResolver` follows bounded alias chains inside one file. Declaration
+contracts derive access from explicit declarations and enclosing scopes. These
+facts retain explicit unresolved results for imported names, unknown extension
+targets, inherited aliases, and compiler-dependent access. They do not replace a
+compiler-backed analysis lane.
 
 Compiler-backed analysis would let Bumper Bowling distinguish:
 
