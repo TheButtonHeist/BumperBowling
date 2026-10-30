@@ -100,6 +100,6 @@ private func namedDeclarations(in file: SourceFileContext) -> [NamedDeclarationO
     for node in SyntaxQuery<ActorDeclSyntax>().matches(in: file) { if let value = occurrence(node.node.name.text, "actor", node.node.modifiers, node.node.attributes, node.node) { result.append(value) } }
     for node in functions().matches(in: file) { if let value = occurrence(node.node.name.text, "function", node.node.modifiers, node.node.attributes, node.node) { result.append(value) } }
     for node in typeAliases().matches(in: file) { if let value = occurrence(node.node.name.text, "typealias", node.node.modifiers, node.node.attributes, node.node) { result.append(value) } }
-    for node in variables().matches(in: file) { for name in node.node.bumper.bindingNames { if let value = occurrence(name, "variable", node.node.modifiers, node.node.attributes, node.node) { result.append(value) } } }
+    for node in variables().matches(in: file) { for name in node.bindingNames { if let value = occurrence(name, "variable", node.node.modifiers, node.node.attributes, node.node) { result.append(value) } } }
     return result
 }

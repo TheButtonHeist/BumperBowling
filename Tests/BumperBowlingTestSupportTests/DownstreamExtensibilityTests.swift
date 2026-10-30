@@ -126,6 +126,53 @@ struct DownstreamExtensibilityTests {
     }
 
     @Test
+    func mutableStoredMembersKeepDeclarationBoundariesAndSourceEvidence() throws {
+        let harness = RuleTestHarness(Rules.each(
+            variables().storedMembers().filter(\.isMutableBinding),
+            id: "project.mutable_members", summary: "Models do not declare mutable stored members."
+        ) { variable in
+            [variable.failure(
+                message: "Mutable state in \(variable.lexicalContext.enclosingNominalNames.joined(separator: ".")).",
+                evidence: ViolationEvidence(
+                    observed: variable.bindingNames.joined(separator: ", "), expectation: "no mutable stored members"
+                )
+            )]
+        })
+        let passing = try harness.evaluate(VirtualRepository {
+            VirtualSourceFile.swift("Sources/Model.swift", source: """
+            var global = 0
+            struct Model {
+                let fixed = 0
+                var computed: Int { fixed }
+                var accessor: Int { get { fixed } set {} }
+                func work() { var local = 0; local += 1 }
+            }
+            """)
+        })
+        #expect(passing.violations.isEmpty)
+        let failing = try harness.evaluate(VirtualRepository {
+            VirtualSourceFile.swift("Sources/Model.swift", source: """
+            var global = 0
+            struct Model {
+                var first = 0, second = 1
+                var observed = 0 { willSet {} didSet {} }
+                let fixed = 0
+                var computed: Int { fixed }
+                func work() { var local = 0; local += 1 }
+            }
+            """)
+        })
+        #expect(failing.violations.count == 2)
+        for (line, names) in [(3, "first, second"), (4, "observed")] {
+            #expect(failing.violations(matching: ViolationMatcher(
+                id: "project.mutable_members", path: "Sources/Model.swift",
+                location: SourcePosition(line: line, column: 5), message: .exact("Mutable state in Model."),
+                observed: .exact(names), expectation: .exact("no mutable stored members")
+            )).count == 1)
+        }
+    }
+
+    @Test
     func downstreamRuleGroupsEnterOneRuleSet() throws {
         let rules = RuleSet {
             projectRules()

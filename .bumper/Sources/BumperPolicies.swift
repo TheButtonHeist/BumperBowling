@@ -48,19 +48,17 @@ private let mutableOwners: [RelativeFilePath: String] = [
 ]
 
 let immutableEngineState = Rules.each(
-    variables(),
+    variables().filter(\.isMutableBinding).storedMembers(),
     id: "bumper.immutable_engine_state",
     summary: "Mutable stored state belongs only to the output buffer, syntax visitors, and fact cache.",
     scope: .under("Sources/BumperBowlingCore")
 ) { variable in
-    guard variable.node.bumper.isMutableBinding,
-          !variable.node.bumper.storedProperties().isEmpty else { return [] }
-    let owners = variable.node.bumper.lexicalContext.enclosingNominalNames
+    let owners = variable.lexicalContext.enclosingNominalNames
     if let allowed = mutableOwners[variable.file.path], owners == [allowed] { return [] }
     return [variable.failure(
         message: "Mutable stored state belongs only to the output buffer, syntax visitors, and fact cache.",
         evidence: ViolationEvidence(
-            observed: "var \(variable.node.bumper.bindingNames.joined(separator: ", ")) in \(owners.first ?? "file scope")",
+            observed: "var \(variable.bindingNames.joined(separator: ", ")) in \(owners.first ?? "file scope")",
             expectation: "immutable stored state outside the four named implementation declarations"
         )
     )]

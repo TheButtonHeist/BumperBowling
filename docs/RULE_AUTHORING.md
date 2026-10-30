@@ -213,6 +213,15 @@ Queries filter files with
 composes file, type-member, local, protocol, enclosing-type, and
 enclosing-function predicates without coupling them to repository paths.
 
+Common match facts use direct access: `match.lexicalContext`,
+`variable.isMutableBinding`, and `variable.bindingNames`. For stored member
+declarations, use `variables().storedMembers()`. Query predicates can use
+key paths, such as `.filter(\.isMutableBinding)`.
+
+These conveniences reuse the existing syntax facts. `match.node` retains full
+SwiftSyntax access. The [query reference](built-ins/syntax-queries.md#match-context-and-facts)
+defines the selection rules and includes a complete example.
+
 Typed syntax views expose value-only `LexicalContext` and `TypeShape` facts.
 Type shapes describe explicit binding and typealias syntax, including
 referenced type names, the outer type spelling, function-type shape, and
