@@ -425,6 +425,8 @@ Both scan and lint JSON include a `coverage` object:
 - `scopes`: supported and unsupported file counts for each configured component path.
 
 The inventory recognizes `.swift`, `.m`, `.mm`, `.h`, `.c`, `.cc`, `.cpp`, `.cxx`, and `.hpp` files.
+Unsupported-language symlinks count in the inventory. The scanner does not read or resolve their targets.
+Swift-source symlinks remain rejected.
 Only `.swift` files receive syntax analysis. These counts do not establish build-target membership or compiler-verified language identity.
 The source-count limit includes unsupported source files. Swift byte limits include unowned Swift files.
 

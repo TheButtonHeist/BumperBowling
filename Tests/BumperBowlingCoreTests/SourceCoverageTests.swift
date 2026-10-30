@@ -77,6 +77,39 @@ struct SourceCoverageTests {
         #expect(scan.fileCount == 1)
     }
 
+    @Test(arguments: [false, true])
+    func unsupportedSymlinksAreInventoriedWithoutReadingTargets(coverageEnabled: Bool) async throws {
+        let root = try makeRepository([
+            "Sources/Core/Core.swift": "struct Core {}",
+            "Sources/Core/Original.h": "void bridge(void);",
+        ])
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try Data([0xFF]).write(to: outside)
+        let directory = root.appendingPathComponent("Sources/Core")
+        for (name, target) in [
+            ("Public.h", directory.appendingPathComponent("Original.h")),
+            ("External.h", outside),
+            ("Dangling.h", outside.appendingPathExtension("missing")),
+        ] {
+            try FileManager.default.createSymbolicLink(at: directory.appendingPathComponent(name), withDestinationURL: target)
+        }
+        let result = try await BumperCommands.lintRun(root: root, configuration: ArchitectureConfiguration(
+            components: [ComponentConfiguration(name: "core", paths: ["Sources/Core"])],
+            rules: coverageEnabled ? SourceCoverage(.error) : RuleConfiguration()
+        ))
+        #expect(result.report.violations.isEmpty)
+        let coverage = try #require(result.coverage)
+        #expect(coverage.includedFileCount == 5)
+        #expect(coverage.scannedFileCount == 1)
+        let headers = try #require(coverage.languages.first { $0.fileExtension == "h" })
+        #expect(headers.includedFileCount == 4)
+        #expect(headers.scannedFileCount == 0)
+    }
+
     @Test
     func coverageRequiresAnInventoryRatherThanReportingFalseSuccess() throws {
         let configuration = ArchitectureConfiguration(components: [], rules: SourceCoverage(.error))

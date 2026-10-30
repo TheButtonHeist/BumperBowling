@@ -135,20 +135,19 @@ public struct RepositoryScanner: Sendable {
             }
 
             let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
-            if resourceValues.isSymbolicLink == true {
+            if resourceValues.isSymbolicLink == true, isSwiftFile(typedRelativePath) {
                 throw BumperError.unsafeSymlinkedSourceFile(typedRelativePath.rawValue)
             }
-            guard resourceValues.isRegularFile == true else {
+            guard resourceValues.isRegularFile == true || resourceValues.isSymbolicLink == true else {
                 continue
             }
-
-            try Self.validateContainment(url: url, root: canonicalRoot, reportedPath: typedRelativePath.rawValue)
 
             guard paths.count < limits.maxFiles else {
                 throw BumperError.repositoryScanLimitExceeded("More than \(limits.maxFiles) Swift source files or unsupported source files matched the configured paths.")
             }
             paths.append(typedRelativePath)
             guard isSwiftFile(typedRelativePath) else { continue }
+            try Self.validateContainment(url: url, root: canonicalRoot, reportedPath: typedRelativePath.rawValue)
 
             let fileSize = UInt64(resourceValues.fileSize ?? 0)
             guard fileSize <= limits.maxFileBytes else {
@@ -234,7 +233,9 @@ public struct RepositoryScanner: Sendable {
 
     private static func relativePath(for url: URL, root: URL) -> String {
         let rootPath = root.standardizedFileURL.path
-        let filePath = url.standardizedFileURL.path
+        // Normalize the existing parent so dangling links keep the same root spelling.
+        let filePath = url.deletingLastPathComponent().standardizedFileURL
+            .appendingPathComponent(url.lastPathComponent).path
 
         if StringMatcher.exact(rootPath).matches(filePath) {
             return ""
