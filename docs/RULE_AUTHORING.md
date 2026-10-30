@@ -141,7 +141,7 @@ Built-in providers under `BuiltInFacts`:
 | `directRecursion` | Functions that call themselves. |
 | `recursiveCallGroups` | Strongly connected components of the locally dispatched call graph — direct and mutual recursion; calls on another receiver never form edges. |
 | `effectiveAccess` | Legacy nominal-only access caps. |
-| `declarationContracts` | Complete explicit declaration signatures, enclosing context, and lexical access with unresolved results. |
+| `declarationContracts` | Explicit signature types, enclosing context, and lexical access with unresolved results. |
 | `enclosingDeclarations` | Each declaration's enclosing nominal chain. |
 | `memberReferences` | Member accesses with optional base names. |
 | `componentDependencies` | Component-to-component import edges. |
