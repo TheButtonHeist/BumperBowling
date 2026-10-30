@@ -128,7 +128,7 @@ struct DownstreamExtensibilityTests {
     @Test
     func mutableStoredMembersKeepDeclarationBoundariesAndSourceEvidence() throws {
         let harness = RuleTestHarness(Rules.each(
-            variables().storedMembers().filter(\.isMutableBinding),
+            variables().storedMembers().filter(\.isMutable),
             id: "project.mutable_members", summary: "Models do not declare mutable stored members."
         ) { variable in
             [variable.failure(

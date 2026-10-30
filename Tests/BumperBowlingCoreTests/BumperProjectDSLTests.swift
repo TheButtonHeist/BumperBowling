@@ -314,7 +314,7 @@ struct BumperProjectDSLTests {
         #expect(variable.bumper.kind == SyntaxKind.variableDecl)
         #expect(variable.bumper.bindingNames == ["id"])
         #expect(variable.bumper.explicitTypeNames == ["String"])
-        #expect(variable.bumper.isMutableBinding)
+        #expect(variable.bumper.isMutable)
         #expect(!variable.bumper.storedProperties().isEmpty)
     }
 }

@@ -48,7 +48,7 @@ private let mutableOwners: [RelativeFilePath: String] = [
 ]
 
 let immutableEngineState = Rules.each(
-    variables().filter(\.isMutableBinding).storedMembers(),
+    variables().filter(\.isMutable).storedMembers(),
     id: "bumper.immutable_engine_state",
     summary: "Mutable stored state belongs only to the output buffer, syntax visitors, and fact cache.",
     scope: .under("Sources/BumperBowlingCore")

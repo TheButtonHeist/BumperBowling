@@ -28,8 +28,8 @@ public struct SyntaxMatch<Node: SyntaxProtocol>: Sendable {
 }
 
 public extension SyntaxMatch where Node == VariableDeclSyntax {
-    var isMutableBinding: Bool {
-        node.bumper.isMutableBinding
+    var isMutable: Bool {
+        node.bumper.isMutable
     }
 
     var bindingNames: [String] {

@@ -51,7 +51,7 @@ Typed capabilities add these operations:
 | `match.node` | The concrete SwiftSyntax node. |
 | `match.file` | The source file and its location helpers. |
 | `match.lexicalContext` | Lexical placement and enclosing declarations. |
-| `variable.isMutableBinding` | A variable declaration uses the `var` keyword. |
+| `variable.isMutable` | A variable declaration uses the `var` keyword. |
 | `variable.bindingNames` | Identifier names from the declaration's bindings. |
 | `match.failure(...)` | A diagnostic at the matched node's source location. |
 
@@ -60,7 +60,7 @@ compiler identity or infer runtime mutation.
 
 ```swift
 Rules.each(
-    variables().filter(\.isMutableBinding).storedMembers(),
+    variables().filter(\.isMutable).storedMembers(),
     id: "project.mutable_members",
     summary: "Models do not declare mutable stored members."
 ) { variable in

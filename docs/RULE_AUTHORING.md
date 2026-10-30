@@ -214,9 +214,9 @@ composes file, type-member, local, protocol, enclosing-type, and
 enclosing-function predicates without coupling them to repository paths.
 
 Common match facts use direct access: `match.lexicalContext`,
-`variable.isMutableBinding`, and `variable.bindingNames`. For stored member
+`variable.isMutable`, and `variable.bindingNames`. For stored member
 declarations, use `variables().storedMembers()`. Query predicates can use
-key paths, such as `.filter(\.isMutableBinding)`.
+key paths, such as `.filter(\.isMutable)`.
 
 These conveniences reuse the existing syntax facts. `match.node` retains full
 SwiftSyntax access. The [query reference](built-ins/syntax-queries.md#match-context-and-facts)

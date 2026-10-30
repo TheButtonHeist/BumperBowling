@@ -94,6 +94,13 @@ architecture configuration as JSON; `evaluate` reads `RepositoryInput` from
 stdin and emits one `RuleReport`. Cache locations honor `BUMPER_CACHE_DIR`
 unchanged; caches from earlier versions are keyed differently and rebuild once.
 
+## Syntax views
+
+Use `variable.bumper.isMutable` in place of `variable.bumper.isMutableBinding`.
+Syntax matches expose the same check directly as `variable.isMutable`.
+This checks for the `var` keyword; it does not resolve whether a value can be
+written at a particular use site.
+
 ## Rule test fixtures
 
 Pass `[SourceInput]` directly to `RuleTestHarness.evaluate(_:)`.
