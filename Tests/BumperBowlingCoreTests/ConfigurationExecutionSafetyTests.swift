@@ -54,7 +54,7 @@ struct ConfigurationExecutionSafetyTests {
     }
 
     @Test
-    func executedConfigurationCanUseConsumerOwnedShapeSources() throws {
+    func executedConfigurationCanUseConsumerOwnedShapeSources() async throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent(UUID().uuidString)
         let consumerSourceRoot = root.appendingPathComponent(".bumper/Sources")
@@ -101,7 +101,17 @@ struct ConfigurationExecutionSafetyTests {
             encoding: .utf8
         )
 
-        let configuration = try ConfigurationLoader.loadConfiguration(root: root)
+        let configurations = try await withThrowingTaskGroup(of: ArchitectureConfiguration.self) { group in
+            for _ in 0..<8 {
+                group.addTask { try ConfigurationLoader.loadConfiguration(root: root) }
+            }
+            var configurations: [ArchitectureConfiguration] = []
+            for try await configuration in group { configurations.append(configuration) }
+            return configurations
+        }
+        #expect(configurations.count == 8)
+        #expect(configurations.allSatisfy { $0 == configurations.first })
+        let configuration = try #require(configurations.first)
         let rules = configuration.rules
 
         #expect(configuration.components.map(\.name) == ["core"])
@@ -250,7 +260,8 @@ struct ConfigurationExecutionSafetyTests {
                     name: "BumperRules",
                     dependencies: [
                         .product(name: "BumperBowlingCore", package: "BumperBowling")
-                    ]
+                    ],
+                    resources: [.copy("ScanPath.txt")]
                 )
             ]
         )
@@ -261,8 +272,15 @@ struct ConfigurationExecutionSafetyTests {
             encoding: .utf8
         )
 
+        let resource = packageSources.appendingPathComponent("ScanPath.txt")
+        try "Sources".write(to: resource, atomically: true, encoding: .utf8)
         let rules = """
         import BumperBowlingCore
+        import Foundation
+
+        public var scanPath: String {
+            try! String(contentsOf: Bundle.module.url(forResource: "ScanPath", withExtension: "txt")!, encoding: .utf8)
+        }
 
         public extension ComponentShape {
             static let importedDomain = ComponentShape {
@@ -278,6 +296,7 @@ struct ConfigurationExecutionSafetyTests {
         import BumperRules
 
         let bumper = BumperProject {
+            Included { scanPath }
             Architecture {
                 Component(.core) {
                     Owns("Sources/Core")
@@ -296,6 +315,10 @@ struct ConfigurationExecutionSafetyTests {
 
         #expect(configuration.rules.storedProperties.severity == .warning)
         #expect(configuration.rules.storedProperties.disallowances == [.boolState])
+        #expect(configuration.includedPaths == ["Sources"])
+        try "Tests".write(to: resource, atomically: true, encoding: .utf8)
+        let updated = try ConfigurationLoader.loadConfiguration(root: root)
+        #expect(updated.includedPaths == ["Tests"])
     }
 }
 

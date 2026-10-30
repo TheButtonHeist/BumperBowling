@@ -231,11 +231,15 @@ extension ConfigurationLoader {
             )
         }
 
-        return try withConsumerTestLock(root: root, environment: environment) {
+        var testEnvironment = environment
+        // Consumer tests must not rewrite sources in an active lint build.
+        testEnvironment[configurationCacheEnvironmentKey] = configurationCacheRoot(environment: environment)
+            .appendingPathComponent("ConsumerTests").path
+        return try withProjectCacheLock(root: root, environment: testEnvironment) {
             let consumerTests = try makeCachedConsumerTestPackage(
                 root: root,
                 bumperPackageRoot: bumperPackageRoot,
-                environment: environment
+                environment: testEnvironment
             )
             return try runSwiftTests(packageRoot: consumerTests.package.root)
         }
@@ -341,35 +345,40 @@ private extension ConfigurationLoader {
     static let projectRunnerProductName = "BumperProjectRunner"
     static let consumerTestPlaceholder = "enum BumperGeneratedTestTargetPlaceholder {}\n"
 
-    static func withConsumerTestLock<Value>(
+    // shortcut: cache operations serialize in this process; use per-project locks if independent projects contend.
+    static let projectCacheLock = NSLock()
+
+    static func withProjectCacheLock<Value>(
         root: URL,
         environment: [String: String],
         operation: () throws -> Value
     ) throws -> Value {
-        let lockRoot = configurationCacheRoot(environment: environment).appendingPathComponent("Locks")
-        try FileManager.default.createDirectory(at: lockRoot, withIntermediateDirectories: true)
-        let identity = sha256Hex(Data(root.standardizedFileURL.path.utf8))
-        let lockURL = lockRoot.appendingPathComponent("\(identity).consumer-tests.lock")
-        let descriptor = Darwin.open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
-        guard descriptor >= 0 else {
-            throw BumperError.consumerTestLockFailed(lockURL.path)
+        try projectCacheLock.withLock {
+            let lockRoot = configurationCacheRoot(environment: environment).appendingPathComponent("Locks")
+            try FileManager.default.createDirectory(at: lockRoot, withIntermediateDirectories: true)
+            let identity = sha256Hex(Data(root.standardizedFileURL.path.utf8))
+            let lockURL = lockRoot.appendingPathComponent("\(identity).project.lock")
+            let descriptor = Darwin.open(lockURL.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+            guard descriptor >= 0 else {
+                throw BumperError.consumerTestLockFailed(lockURL.path)
+            }
+            defer { _ = Darwin.close(descriptor) }
+            var lock = flock(
+                l_start: 0,
+                l_len: 0,
+                l_pid: 0,
+                l_type: Int16(F_WRLCK),
+                l_whence: Int16(SEEK_SET)
+            )
+            guard Darwin.fcntl(descriptor, F_SETLKW, &lock) == 0 else {
+                throw BumperError.consumerTestLockFailed(lockURL.path)
+            }
+            defer {
+                lock.l_type = Int16(F_UNLCK)
+                _ = Darwin.fcntl(descriptor, F_SETLK, &lock)
+            }
+            return try operation()
         }
-        defer { _ = Darwin.close(descriptor) }
-        var lock = flock(
-            l_start: 0,
-            l_len: 0,
-            l_pid: 0,
-            l_type: Int16(F_WRLCK),
-            l_whence: Int16(SEEK_SET)
-        )
-        guard Darwin.fcntl(descriptor, F_SETLKW, &lock) == 0 else {
-            throw BumperError.consumerTestLockFailed(lockURL.path)
-        }
-        defer {
-            lock.l_type = Int16(F_UNLCK)
-            _ = Darwin.fcntl(descriptor, F_SETLK, &lock)
-        }
-        return try operation()
     }
 
     /// The configuration runner computes a pure value: it evaluates the
@@ -388,67 +397,72 @@ private extension ConfigurationLoader {
     """
 
     static func runProjectRunner(root: URL, mode: ProjectRunnerMode, input: Data?) throws -> String {
-        let root = root.standardizedFileURL
-        let configurationURL = root.appendingPathComponent(fileName)
-        guard FileManager.default.fileExists(atPath: configurationURL.path) else {
-            throw BumperError.configurationMissing(configurationURL.path)
-        }
+        try withProjectCacheLock(root: root, environment: ProcessInfo.processInfo.environment) {
+            let root = root.standardizedFileURL
+            let configurationURL = root.appendingPathComponent(fileName)
+            guard FileManager.default.fileExists(atPath: configurationURL.path) else {
+                throw BumperError.configurationMissing(configurationURL.path)
+            }
 
-        let packageRoot = try bumperPackageRoot()
-        let cachedPackage = try makeCachedPackage(
-            configurationURL: configurationURL,
-            bumperPackageRoot: packageRoot
-        )
-        try buildCachedPackageIfNeeded(cachedPackage)
-
-        let timeoutSeconds = try configurationEvaluationTimeout(
-            environment: ProcessInfo.processInfo.environment
-        )
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
-        process.arguments = [
-            "-p",
-            sandboxProfile,
-            cachedPackage.executableURL.path,
-            mode.rawValue,
-        ]
-        process.environment = [:]
-
-        let result = try runProcess(
-            process,
-            timeoutSeconds: timeoutSeconds,
-            outputLimitBytes: configurationCommandOutputLimitBytes,
-            stdin: input
-        )
-
-        if result.timedOut {
-            throw BumperError.configurationExecutionTimedOut(
-                configurationURL.path,
-                Int(timeoutSeconds)
+            let packageRoot = try bumperPackageRoot()
+            let cachedPackage = try makeCachedPackage(
+                configurationURL: configurationURL,
+                bumperPackageRoot: packageRoot
             )
-        }
+            try buildCachedPackageIfNeeded(cachedPackage)
 
-        if let stream = result.outputTooLargeStream {
-            throw BumperError.configurationOutputTooLarge(
-                configurationURL.path,
-                stream,
-                configurationCommandOutputLimitBytes
+            let timeoutSeconds = try configurationEvaluationTimeout(
+                environment: ProcessInfo.processInfo.environment
             )
-        }
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
+            process.arguments = [
+                "-p",
+                sandboxProfile,
+                cachedPackage.executableURL.path,
+                mode.rawValue,
+            ]
+            process.environment = [:]
 
-        let stdoutText = try outputText(result.stdout, stream: "stdout")
-        let stderrText = String(data: result.stderr, encoding: .utf8) ?? "<non-UTF-8 stderr>"
-
-        guard result.terminationStatus == 0 else {
-            throw BumperError.configurationExecutionFailed(
-                configurationURL.path,
-                stderrText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let result = try runProcess(
+                process,
+                timeoutSeconds: timeoutSeconds,
+                outputLimitBytes: configurationCommandOutputLimitBytes,
+                stdin: input
             )
-        }
 
-        return try extractPayload(from: stdoutText)
+            if result.timedOut {
+                throw BumperError.configurationExecutionTimedOut(
+                    configurationURL.path,
+                    Int(timeoutSeconds)
+                )
+            }
+
+            if let stream = result.outputTooLargeStream {
+                throw BumperError.configurationOutputTooLarge(
+                    configurationURL.path,
+                    stream,
+                    configurationCommandOutputLimitBytes
+                )
+            }
+
+            let stdoutText = try outputText(result.stdout, stream: "stdout")
+            let stderrText = String(data: result.stderr, encoding: .utf8) ?? "<non-UTF-8 stderr>"
+
+            guard result.terminationStatus == 0 else {
+                throw BumperError.configurationExecutionFailed(
+                    configurationURL.path,
+                    stderrText.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+            }
+
+            return try extractPayload(from: stdoutText)
+        }
     }
 
+}
+
+extension ConfigurationLoader {
     static func runProcess(
         _ process: Process,
         timeoutSeconds: TimeInterval,
@@ -458,81 +472,102 @@ private extension ConfigurationLoader {
         let stdout = Pipe()
         let stderr = Pipe()
         let stdinPipe = stdin.map { _ in Pipe() }
-        let stdoutBuffer = BoundedOutputBuffer(limit: outputLimitBytes)
-        let stderrBuffer = BoundedOutputBuffer(limit: outputLimitBytes)
-
+        var stdoutBuffer = BoundedOutputBuffer(limit: outputLimitBytes)
+        var stderrBuffer = BoundedOutputBuffer(limit: outputLimitBytes)
         process.standardOutput = stdout
         process.standardError = stderr
-        if let stdinPipe {
-            process.standardInput = stdinPipe
-        }
+        process.standardInput = stdinPipe
 
-        let stdoutHandle = stdout.fileHandleForReading
-        let stderrHandle = stderr.fileHandleForReading
-        stdoutHandle.readabilityHandler = { handle in
-            stdoutBuffer.append(handle.availableData)
+        let readHandles = [stdout.fileHandleForReading, stderr.fileHandleForReading]
+        let handles = readHandles + (stdinPipe.map { [$0.fileHandleForWriting] } ?? [])
+        for handle in handles {
+            let flags = Darwin.fcntl(handle.fileDescriptor, F_GETFL)
+            guard flags >= 0, Darwin.fcntl(handle.fileDescriptor, F_SETFL, flags | O_NONBLOCK) >= 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
         }
-        stderrHandle.readabilityHandler = { handle in
-            stderrBuffer.append(handle.availableData)
+        if let stdinPipe {
+            guard Darwin.fcntl(stdinPipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) >= 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
         }
         defer {
-            stdoutHandle.readabilityHandler = nil
-            stderrHandle.readabilityHandler = nil
+            for handle in handles { try? handle.close() }
         }
 
+        let clock = ContinuousClock()
+        let startedAt = clock.now
         try process.run()
-        if let stdin, let stdinPipe {
-            stdinPipe.fileHandleForWriting.write(stdin)
-            try? stdinPipe.fileHandleForWriting.close()
+        defer {
+            if process.isRunning {
+                Darwin.kill(process.processIdentifier, SIGKILL)
+                process.waitUntilExit()
+            }
         }
-
-        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        try? stdout.fileHandleForWriting.close()
+        try? stderr.fileHandleForWriting.close()
+        try? stdinPipe?.fileHandleForReading.close()
+        var descriptors = readHandles.map { pollfd(fd: $0.fileDescriptor, events: Int16(POLLIN), revents: 0) }
+        descriptors.append(pollfd(fd: stdinPipe?.fileHandleForWriting.fileDescriptor ?? -1, events: Int16(POLLOUT), revents: 0))
+        var inputOffset = 0
+        var bytes = [UInt8](repeating: 0, count: 64 * 1024)
         var timedOut = false
         var outputTooLargeStream: String?
 
-        while process.isRunning {
-            if stdoutBuffer.hasExceededLimit {
-                outputTooLargeStream = "stdout"
-                process.terminate()
+        while process.isRunning || descriptors.prefix(2).contains(where: { $0.fd >= 0 }) {
+            if stdoutBuffer.hasExceededLimit || stderrBuffer.hasExceededLimit {
+                outputTooLargeStream = stdoutBuffer.hasExceededLimit ? "stdout" : "stderr"
                 break
             }
-            if stderrBuffer.hasExceededLimit {
-                outputTooLargeStream = "stderr"
-                process.terminate()
-                break
-            }
-            if Date() >= deadline {
+            let remaining = timeoutSeconds - startedAt.duration(to: clock.now).secondsValue
+            guard remaining > 0 else {
                 timedOut = true
-                process.terminate()
                 break
             }
-            Thread.sleep(forTimeInterval: 0.05)
+            let wait = Int32(max(1, min(50, remaining * 1000)))
+            let ready = Darwin.poll(&descriptors, nfds_t(descriptors.count), wait)
+            if ready < 0 {
+                if errno == EINTR { continue }
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            for index in 0..<2 where descriptors[index].fd >= 0 && descriptors[index].revents != 0 {
+                let count = Darwin.read(descriptors[index].fd, &bytes, bytes.count)
+                if count > 0 {
+                    let data = Data(bytes.prefix(count))
+                    if index == 0 { stdoutBuffer.append(data) } else { stderrBuffer.append(data) }
+                } else if count == 0 {
+                    descriptors[index].fd = -1
+                } else if errno != EAGAIN && errno != EINTR {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+            }
+            if descriptors[2].fd >= 0, descriptors[2].revents != 0, let stdin {
+                let count = stdin.withUnsafeBytes { buffer in
+                    Darwin.write(descriptors[2].fd, buffer.baseAddress?.advanced(by: inputOffset), min(bytes.count, stdin.count - inputOffset))
+                }
+                if count >= 0 {
+                    inputOffset += count
+                } else if errno == EPIPE {
+                    inputOffset = stdin.count
+                } else if errno != EAGAIN && errno != EINTR {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+            }
+            if descriptors[2].fd >= 0, inputOffset == stdin?.count || !process.isRunning {
+                try? stdinPipe?.fileHandleForWriting.close()
+                descriptors[2].fd = -1
+            }
         }
 
         if process.isRunning {
-            let terminationDeadline = Date().addingTimeInterval(5)
-            while process.isRunning && Date() < terminationDeadline {
+            process.terminate()
+            let terminationDeadline = clock.now.advanced(by: .seconds(5))
+            while process.isRunning && clock.now < terminationDeadline {
                 Thread.sleep(forTimeInterval: 0.05)
             }
-            if process.isRunning {
-                Darwin.kill(process.processIdentifier, SIGKILL)
-            }
+            if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
         }
-
         process.waitUntilExit()
-        stdoutHandle.readabilityHandler = nil
-        stderrHandle.readabilityHandler = nil
-        stdoutBuffer.append(stdoutHandle.readDataToEndOfFile())
-        stderrBuffer.append(stderrHandle.readDataToEndOfFile())
-
-        if outputTooLargeStream == nil {
-            if stdoutBuffer.hasExceededLimit {
-                outputTooLargeStream = "stdout"
-            } else if stderrBuffer.hasExceededLimit {
-                outputTooLargeStream = "stderr"
-            }
-        }
-
         return CapturedProcessOutput(
             stdout: stdoutBuffer.data,
             stderr: stderrBuffer.data,
@@ -541,7 +576,9 @@ private extension ConfigurationLoader {
             outputTooLargeStream: outputTooLargeStream
         )
     }
+}
 
+private extension ConfigurationLoader {
     static func outputText(_ data: Data, stream: String) throws -> String {
         guard let text = String(data: data, encoding: .utf8) else {
             throw BumperError.configurationOutputMalformed("configuration \(stream) was not valid UTF-8")
@@ -805,10 +842,7 @@ private extension ConfigurationLoader {
     }
 
     static func buildCachedPackageIfNeeded(_ package: CachedPackage) throws {
-        guard package.needsBuild || !FileManager.default.isExecutableFile(atPath: package.executableURL.path) else {
-            return
-        }
-
+        // SwiftPM also tracks resources and transitive package dependencies.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = cachedRunnerBuildArguments(
@@ -1137,7 +1171,7 @@ extension ConfigurationLoader {
     }
 }
 
-private struct CapturedProcessOutput {
+struct CapturedProcessOutput {
     let stdout: Data
     let stderr: Data
     let terminationStatus: Int32
@@ -1187,47 +1221,19 @@ private struct RulePackageDependency {
     let product: String
 }
 
-private final class BoundedOutputBuffer: @unchecked Sendable {
-    private let lock = NSLock()
+private struct BoundedOutputBuffer {
     private let limit: Int
-    private var storage = Data()
-    private var exceededLimit = false
+    private(set) var data = Data()
+    private(set) var hasExceededLimit = false
 
     init(limit: Int) {
         self.limit = Swift.max(1, limit)
     }
 
-    var data: Data {
-        lock.withLock {
-            storage
-        }
-    }
-
-    var hasExceededLimit: Bool {
-        lock.withLock {
-            exceededLimit
-        }
-    }
-
-    func append(_ chunk: Data) {
-        guard !chunk.isEmpty else {
-            return
-        }
-
-        lock.withLock {
-            guard !exceededLimit else {
-                return
-            }
-
-            let remaining = limit - storage.count
-            if chunk.count > remaining {
-                if remaining > 0 {
-                    storage.append(contentsOf: chunk.prefix(remaining))
-                }
-                exceededLimit = true
-            } else {
-                storage.append(chunk)
-            }
-        }
+    mutating func append(_ chunk: Data) {
+        guard !hasExceededLimit else { return }
+        let remaining = limit - data.count
+        data.append(contentsOf: chunk.prefix(remaining))
+        hasExceededLimit = chunk.count > remaining
     }
 }

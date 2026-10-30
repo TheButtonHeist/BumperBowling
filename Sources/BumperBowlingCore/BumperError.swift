@@ -37,7 +37,7 @@ public enum BumperError: Error, CustomStringConvertible {
         case .configurationPackageUnavailable(let path):
             "Could not locate the BumperBowling package at \(path). Set BUMPER_PACKAGE_PATH to the package root."
         case .consumerTestLockFailed(let path):
-            "Could not acquire the consumer test cache lock at \(path)."
+            "Could not acquire the project cache lock at \(path)."
         case .consumerTestsMissing(let path):
             "No consumer rule tests found under \(path). Add Swift tests under .bumper/Tests."
         case .invalidEvaluationTimeout(let value):
