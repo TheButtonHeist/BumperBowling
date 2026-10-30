@@ -25,6 +25,8 @@ public struct FactProviderID: Hashable, Sendable, CustomStringConvertible, Expre
 /// A provider is evaluated at most once per engine run; dependencies are
 /// explicit through `context.facts(...)`. Providers are values, so both
 /// named provider structs and closure-backed `DerivedFact`s conform.
+/// An ID identifies the complete derivation, including parameters. Providers
+/// with the same ID share the first result or error within one run.
 public protocol FactProvider: Sendable {
     associatedtype Facts: Sendable
 
@@ -141,14 +143,14 @@ public struct DeclarationOccurrence: Equatable, Sendable {
     public let symbol: NominalSymbol
     public let kind: DeclarationKind?
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 
     public init(
         symbol: NominalSymbol,
         kind: DeclarationKind?,
         path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID?,
         location: SourcePosition?
     ) {
         self.symbol = symbol
@@ -202,13 +204,13 @@ public struct DeclarationInventoryProvider: FactProvider {
 public struct FunctionCallOccurrence: Equatable, Sendable {
     public let callee: FunctionSymbol
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 
     public init(
         callee: FunctionSymbol,
         path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID?,
         location: SourcePosition?
     ) {
         self.callee = callee
@@ -260,7 +262,7 @@ public struct RecursiveFunctionOccurrence: Equatable, Sendable {
     public let enclosingType: NominalSymbol?
     public let parameterTypeNames: [String]
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 
     public init(
@@ -268,7 +270,7 @@ public struct RecursiveFunctionOccurrence: Equatable, Sendable {
         enclosingType: NominalSymbol?,
         parameterTypeNames: [String],
         path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID?,
         location: SourcePosition?
     ) {
         self.function = function

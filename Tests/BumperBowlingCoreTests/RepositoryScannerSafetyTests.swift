@@ -4,8 +4,8 @@ import Testing
 
 @Suite("RepositoryScanner Safety")
 struct RepositoryScannerSafetyTests {
-    @Test
-    func rejectsSymlinkedSwiftFiles() async throws {
+    @Test(arguments: [false, true])
+    func rejectsSymlinkedSwiftFiles(withArchitecture: Bool) async throws {
         let temp = try makeTemporaryDirectory()
         defer {
             try? FileManager.default.removeItem(at: temp)
@@ -20,7 +20,7 @@ struct RepositoryScannerSafetyTests {
         try "public struct Secret {}\n".write(to: outsideFile, atomically: true, encoding: .utf8)
         try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: outsideFile)
 
-        let scanner = try RepositoryScanner(configuration: configuration)
+        let scanner = try RepositoryScanner(configuration: withArchitecture ? configuration : ArchitectureConfiguration())
 
         do {
             _ = try await scanner.scan(root: root)
@@ -54,8 +54,8 @@ struct RepositoryScannerSafetyTests {
         }
     }
 
-    @Test
-    func rejectsScansThatExceedFileCountLimit() async throws {
+    @Test(arguments: [false, true])
+    func rejectsScansThatExceedFileCountLimit(withArchitecture: Bool) async throws {
         let root = try makeRepository(files: [
             "Sources/Core/One.swift": "public struct One {}\n",
             "Sources/Core/Two.swift": "public struct Two {}\n",
@@ -65,7 +65,7 @@ struct RepositoryScannerSafetyTests {
         }
 
         let scanner = try RepositoryScanner(
-            configuration: configuration,
+            configuration: withArchitecture ? configuration : ArchitectureConfiguration(),
             limits: RepositoryScanLimits(maxFiles: 1)
         )
 
@@ -77,8 +77,8 @@ struct RepositoryScannerSafetyTests {
         }
     }
 
-    @Test
-    func rejectsFilesThatExceedByteLimit() async throws {
+    @Test(arguments: [false, true])
+    func rejectsFilesThatExceedByteLimit(withArchitecture: Bool) async throws {
         let root = try makeRepository(files: [
             "Sources/Core/Large.swift": "public struct Large { let value = \"0123456789\" }\n",
         ])
@@ -87,7 +87,7 @@ struct RepositoryScannerSafetyTests {
         }
 
         let scanner = try RepositoryScanner(
-            configuration: configuration,
+            configuration: withArchitecture ? configuration : ArchitectureConfiguration(),
             limits: RepositoryScanLimits(maxFileBytes: 10)
         )
 

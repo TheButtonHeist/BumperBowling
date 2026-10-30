@@ -14,13 +14,13 @@ struct RuleAuthoringRecipeTests {
         ) { _ in "Use a named analytics payload instead of a dictionary literal." }
         let harness = RuleTestHarness(rule)
         let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Analytics/Event.swift", component: "app", source: "let payload = Event(name: \"tap\")")
-            VirtualSourceFile.swift("Sources/Other/Lookup.swift", component: "app", source: "let lookup = [\"name\": \"tap\"]")
+            VirtualSourceFile.swift("Sources/Analytics/Event.swift", source: "let payload = Event(name: \"tap\")")
+            VirtualSourceFile.swift("Sources/Other/Lookup.swift", source: "let lookup = [\"name\": \"tap\"]")
         })
         #expect(passing.violations.isEmpty)
 
         let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Analytics/Event.swift", component: "app", source: "let payload = [\"name\": \"tap\"]")
+            VirtualSourceFile.swift("Sources/Analytics/Event.swift", source: "let payload = [\"name\": \"tap\"]")
         })
         #expect(failing.violations.count == 1)
         #expect(failing.contains(ViolationMatcher(
@@ -33,7 +33,7 @@ struct RuleAuthoringRecipeTests {
     @Test func everyFeatureHasItsOwnDirectMembers() throws {
         let harness = RuleTestHarness(featureMembers)
         let passing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Features/Features.swift", component: "app", source: """
+            VirtualSourceFile.swift("Sources/Features/Features.swift", source: """
             struct CheckoutFeature { struct State {}; enum Action {} }
             struct SearchFeature { struct State {}; enum Action {} }
             struct Unrelated {}
@@ -42,7 +42,7 @@ struct RuleAuthoringRecipeTests {
         #expect(passing.violations.isEmpty)
 
         let failing = try harness.evaluate(VirtualRepository {
-            VirtualSourceFile.swift("Sources/Features/Features.swift", component: "app", source: """
+            VirtualSourceFile.swift("Sources/Features/Features.swift", source: """
             struct CheckoutFeature { struct Nested { struct State {}; enum Action {} } }
             struct SearchFeature { struct State {} }
             struct Unrelated { enum Action {} }
@@ -61,7 +61,7 @@ struct RuleAuthoringRecipeTests {
 
     @Test func routesHaveExactlyOneRegistrationAcrossFiles() throws {
         let harness = RuleTestHarness(routeRegistrations)
-        let routes = VirtualSourceFile.swift("Sources/App/Routes.swift", component: "app", source: """
+        let routes = VirtualSourceFile.swift("Sources/App/Routes.swift", source: """
         enum AppRoute {
             case home
             case detail
@@ -69,16 +69,17 @@ struct RuleAuthoringRecipeTests {
         """)
         let passing = try harness.evaluate(VirtualRepository {
             routes
-            VirtualSourceFile.swift("Sources/App/Home.swift", component: "app", source: "register(.home)")
-            VirtualSourceFile.swift("Sources/App/Detail.swift", component: "app", source: "register(.detail)")
+            VirtualSourceFile.swift("Sources/App/Home.swift", source: "register(.home)")
+            VirtualSourceFile.swift("Sources/App/Detail.swift", source: "register(.detail)")
+            VirtualSourceFile.swift("Sources/Other/Routes.swift", source: "enum AppRoute { case unrelated }")
         })
         #expect(passing.violations.isEmpty)
 
         let failing = try harness.evaluate(VirtualRepository {
             routes
-            VirtualSourceFile.swift("Sources/App/Home.swift", component: "app", source: "register(.home)")
-            VirtualSourceFile.swift("Sources/App/Duplicate.swift", component: "app", source: "register(.home)")
-            VirtualSourceFile.swift("Sources/App/Other.swift", component: "app", source: "other.register(.detail)")
+            VirtualSourceFile.swift("Sources/App/Home.swift", source: "register(.home)")
+            VirtualSourceFile.swift("Sources/App/Duplicate.swift", source: "register(.home)")
+            VirtualSourceFile.swift("Sources/App/Other.swift", source: "other.register(.detail)")
         })
         #expect(failing.violations.count == 2)
         for (line, route, count) in [(2, "home", 2), (3, "detail", 0)] {
@@ -90,7 +91,34 @@ struct RuleAuthoringRecipeTests {
             )).count == 1)
         }
     }
+
+    @Test func componentPolicyDoesNotInventOwnersForUnownedFiles() throws {
+        let harness = RuleTestHarness(Rules.importOwnership(
+            ["UI"], allowed: .component(RecipeComponent.ui), id: "components.ui_imports"
+        ))
+        let ui = VirtualSourceFile.swift("Sources/UI/Screen.swift", component: "ui", source: "import UI")
+        let passing = try harness.evaluate(VirtualRepository {
+            ui
+            VirtualSourceFile.swift("Sources/Domain/Model.swift", component: "domain", source: "struct Model {}")
+            VirtualSourceFile.swift("Sources/Other.swift", source: "struct Other {}")
+        })
+        #expect(passing.violations.isEmpty)
+        let failing = try harness.evaluate(VirtualRepository {
+            ui
+            VirtualSourceFile.swift("Sources/Domain/Model.swift", component: "domain", source: "import UI")
+            VirtualSourceFile.swift("Sources/Other.swift", source: "import UI")
+        })
+        #expect(failing.violations.count == 2)
+        for path in ["Sources/Domain/Model.swift", "Sources/Other.swift"] {
+            #expect(failing.contains(ViolationMatcher(
+                id: "components.ui_imports", path: try RelativeFilePath(path),
+                observed: .exact("import UI in \(path)"), expectation: .exact("imports only inside the allowed scope")
+            )))
+        }
+    }
 }
+
+private enum RecipeComponent: String, ComponentKey { case ui }
 
 private let featureMembers = Rules.each(
     structs().filter { $0.node.name.text.hasSuffix("Feature") },
@@ -136,11 +164,13 @@ private let routeInventory = DerivedFact("recipes.route_inventory") { context in
 
 private let routeRegistrations = Rules.repository(
     "routes.registration",
-    summary: "Each AppRoute case has exactly one explicit registration."
-) { context in
+    summary: "Each AppRoute case has exactly one explicit registration.",
+    scope: .files(["Sources/App/Routes.swift"])
+) { subjects, context in
+    let paths = Set(subjects.map(\.path))
     let inventory = try context.facts(routeInventory)
     let counts = Dictionary(grouping: inventory.registrations, by: { $0 }).mapValues(\.count)
-    return inventory.cases.compactMap { route in
+    return inventory.cases.filter { paths.contains($0.file.path) }.compactMap { route in
         let name = route.node.name.text
         let count = counts[name, default: 0]
         guard count != 1 else { return nil }

@@ -5,20 +5,20 @@ import Testing
 @Suite("Source coverage")
 struct SourceCoverageTests {
     @Test
-    func rawScanRejectsUnownedSourcesInsteadOfReturningEmptyInput() async throws {
+    func rawScanIncludesUnownedSources() async throws {
         let root = try makeRepository(["Sources/New/Probe.swift": "import Foundation\n"])
         defer { try? FileManager.default.removeItem(at: root) }
         let scanner = try RepositoryScanner(configuration: ArchitectureConfiguration(
             components: [ComponentConfiguration(name: "core", paths: ["Sources/Core"])]
         ))
 
-        do {
-            _ = try await scanner.scanSources(root: root)
-            Issue.record("Expected an unowned source to fail the raw scan.")
-        } catch let error as BumperError {
-            guard case .noComponentForFile(let path) = error else { throw error }
-            #expect(path == "Sources/New/Probe.swift")
-        }
+        let files = try await scanner.scanSources(root: root)
+        #expect(files.map(\.path.rawValue) == ["Sources/New/Probe.swift"])
+        #expect(files.first?.source == "import Foundation\n")
+        #expect(files.first?.component == nil)
+        let file = try await scanner.scanFile(root.appendingPathComponent("Sources/New/Probe.swift"), root: root)
+        #expect(file.component == nil)
+        #expect(file.imports.map(\.rawValue) == ["Foundation"])
     }
 
     @Test
@@ -47,17 +47,19 @@ struct SourceCoverageTests {
         let input = try await scanner.scanInput(root: root)
         // The runner receives JSON, so exercise that boundary before evaluation.
         let decoded = try JSONDecoder().decode(RepositoryInput.self, from: JSONEncoder().encode(input))
+        #expect(decoded.files.count == 3)
+        #expect(decoded.files.filter { $0.component == nil }.map(\.path.rawValue) == ["Sources/New/A.swift", "Sources/New/Z.swift"])
         let report = try BumperProject {}.evaluate(decoded)
         let result = try await BumperCommands.lintRun(root: root, configuration: configuration)
         #expect(result.report == report)
         let coverage = try #require(result.coverage)
         #expect(coverage.includedFileCount == 5)
-        #expect(coverage.scannedFileCount == 1)
+        #expect(coverage.scannedFileCount == 3)
         #expect(coverage.unownedFileCount == 2)
         #expect(coverage.unownedPaths.map(\.rawValue) == ["Sources/New/A.swift", "Sources/New/Z.swift"])
         #expect(coverage.overlappingPaths.map(\.rawValue) == ["Sources/Core/Shared/Owned.swift"])
         #expect(coverage.languages.map(\.fileExtension) == ["h", "m", "swift"])
-        #expect(coverage.languages.filter(\.isSupported).map(\.scannedFileCount) == [1])
+        #expect(coverage.languages.filter(\.isSupported).map(\.scannedFileCount) == [3])
         let findings = report.violations.filter { $0.ruleID == .sourceCoverage }
         #expect(findings.count == 5)
         #expect(findings.filter { $0.severity == .error }.map(\.path.rawValue) == [
@@ -74,7 +76,38 @@ struct SourceCoverageTests {
         #expect(unownedOutput.component == nil)
         let scan = try await BumperCommands.scanReport(root: root, configuration: configuration)
         #expect(scan.coverage == coverage)
-        #expect(scan.fileCount == 1)
+        #expect(scan.fileCount == 3)
+    }
+
+    @Test func syntaxOnlyProjectScansAndEvaluatesWithoutComponents() async throws {
+        let root = try makeRepository(["Sources/Model.swift": "struct Model {}"])
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = BumperProject {
+            Rules {
+                Rules.forbid(structs().filter { $0.node.name.text == "Forbidden" }, id: "project.forbidden") { _ in
+                    "Forbidden declaration."
+                }
+            }
+        }
+        let scanner = try RepositoryScanner(scan: project.scanConfiguration)
+        let passing = try project.evaluate(try await scanner.scanInput(root: root))
+        #expect(passing.violations.isEmpty)
+        try "struct Forbidden {}".write(to: root.appendingPathComponent("Sources/Model.swift"), atomically: true, encoding: .utf8)
+        let input = try await scanner.scanInput(root: root)
+        let decoded = try JSONDecoder().decode(RepositoryInput.self, from: JSONEncoder().encode(input))
+        let failing = try project.evaluate(decoded)
+        #expect(failing.violations.count == 1)
+        let violation = try #require(failing.violations.first)
+        #expect(violation.ruleID == RuleID("project.forbidden"))
+        #expect(violation.path.rawValue == "Sources/Model.swift")
+        #expect(violation.location == SourcePosition(line: 1, column: 1))
+        #expect(violation.message == "Forbidden declaration.")
+        let facts = try await scanner.scan(root: root)
+        let graph = ArchitectureGraph(nodes: facts, rules: try ArchitectureRules(configuration: ArchitectureConfiguration()))
+        #expect(facts.files.count == 1)
+        #expect(graph.componentNodes.isEmpty)
+        #expect(graph.moduleImportEdges.isEmpty)
+        #expect(graph.componentImportEdges.isEmpty)
     }
 
     @Test(arguments: [false, true])

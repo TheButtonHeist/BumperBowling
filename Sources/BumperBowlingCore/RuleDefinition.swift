@@ -108,11 +108,11 @@ public struct RuleReport: Equatable, Sendable, Codable {
 
     public var markdownSummary: String {
         if violations.isEmpty {
-            return "No architecture violations found."
+            return "No rule violations found."
         }
 
         var lines = [
-            hasErrors ? "The code breaks the architecture's rules:" : "The architecture holds, but note these warnings:",
+            hasErrors ? "The code breaks the configured rules:" : "The rules reported these warnings:",
             "",
         ]
         for violation in violations {
@@ -187,7 +187,7 @@ public struct RuleSet: Sendable {
     /// cache. Analysis errors are not violations: a throwing rule aborts
     /// the run with an explicit error.
     public func evaluate(
-        configuration: ArchitectureConfiguration,
+        configuration: ArchitectureConfiguration = ArchitectureConfiguration(),
         repository: RepositorySyntax
     ) throws -> RuleReport {
         try evaluationRun(configuration: configuration, repository: repository).report
@@ -196,7 +196,7 @@ public struct RuleSet: Sendable {
     /// The same evaluation, keeping its telemetry: per-rule and per-fact
     /// durations for diagnosing slow project rules.
     public func evaluationRun(
-        configuration: ArchitectureConfiguration,
+        configuration: ArchitectureConfiguration = ArchitectureConfiguration(),
         repository: RepositorySyntax
     ) throws -> EvaluationRun {
         try evaluationRun(in: RuleContext(configuration: configuration, repository: repository))
@@ -265,6 +265,7 @@ public enum RuleEvaluationError: Error, Equatable, Sendable, CustomStringConvert
     case duplicateRuleID(RuleID)
     case emptyRuleScope(RuleID)
     case invalidSyntaxCardinality(RuleID, Int)
+    case diagnosticOutsideScope(RuleID, RelativeFilePath)
 
     public var description: String {
         switch self {
@@ -280,6 +281,8 @@ public enum RuleEvaluationError: Error, Equatable, Sendable, CustomStringConvert
             "Rule \(id.rawValue) requires syntax matches, but its scope selects no files."
         case .invalidSyntaxCardinality(let id, let count):
             "Rule \(id.rawValue) has a negative syntax cardinality (\(count)); counts must be nonnegative."
+        case .diagnosticOutsideScope(let id, let path):
+            "Rule \(id.rawValue) reported \(path.rawValue) outside its selected subjects. Anchor the diagnostic at a selected file."
         }
     }
 }

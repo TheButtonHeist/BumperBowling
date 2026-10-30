@@ -1,6 +1,7 @@
 # Bumper Bowling Architecture
 
-Bumper Bowling is a Swift architectural linter: a Swift 6 assertion engine over SwiftSyntax-observed source facts.
+Bumper Bowling is a Swift rule engine over SwiftSyntax-observed source facts.
+The architecture DSL supplies optional ownership and dependency policy.
 
 The configuration language is specified in [DSL_SPEC.md](DSL_SPEC.md). Bumper Bowling ships one engine and one dumb interface over that engine: the `bumper` CLI for shell workflows, CI jobs, and product tests.
 
@@ -22,11 +23,11 @@ The interesting part is the assertion model, not the wrapper. Bumper Bowling tur
 ## Core Model
 
 ```text
-SwiftSyntax reads the code
-Bumper Bowling records raw source facts
-Those facts form an ArchitectureGraph
-The configuration encodes typed assertions
-Lint runs math over the graph
+The host collects all included Swift sources
+RepositorySyntax parses each source once
+Rules inspect syntax and shared derived facts
+Architecture facts add component ownership and dependency edges
+RuleSet produces one structured RuleReport
 ```
 
 The lint run itself is modeled as an explicit reducer-backed state machine:
@@ -70,7 +71,11 @@ dependency edges, computed source facts, and a raw SwiftSyntax node catalog.
 That graph is evidence for the declared bounds, not a source of generated
 policy.
 
-SwiftSyntax remains the full source tree. `ArchitectureGraph` is the smaller projection rules operate on. Bumper Bowling should not duplicate SwiftSyntax node types or maintain a second syntax enum. Raw syntax checks use SwiftSyntax's `SyntaxKind`; richer local checks use computed extensions on real SwiftSyntax nodes through `node.bumper`.
+SwiftSyntax remains the full source tree. Generic rules can inspect that tree
+without component declarations. `ArchitectureGraph` is an optional projection
+for architecture policy. Unowned files remain in source facts, while component
+edges require ownership. Raw syntax checks use SwiftSyntax's `SyntaxKind`;
+richer local checks use extensions on real nodes through `node.bumper`.
 
 Add graph facts only when they support an assertion Bumper Bowling can explain. Rules should be lean mathematical operations over nodes: path matching, set membership, graph edges, and cycles. Keep scorecards explainable: report the observed graph fact, the declared lane, and why they do not match.
 

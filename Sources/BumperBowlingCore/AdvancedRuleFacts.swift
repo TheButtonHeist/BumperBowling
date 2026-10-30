@@ -9,10 +9,10 @@ public struct NamedDeclarationOccurrence: Equatable, Sendable {
     public let access: AccessLevel
     public let attributes: [AttributeName]
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 
-    public init(name: DeclarationName, kind: String, access: AccessLevel, attributes: [AttributeName], path: RelativeFilePath, component: ComponentID, location: SourcePosition?) {
+    public init(name: DeclarationName, kind: String, access: AccessLevel, attributes: [AttributeName], path: RelativeFilePath, component: ComponentID?, location: SourcePosition?) {
         self.name = name
         self.kind = kind
         self.access = access
@@ -42,7 +42,7 @@ public struct TypeReferenceOccurrence: Equatable, Sendable {
     public let subject: String
     public let type: TypeShape
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 }
 

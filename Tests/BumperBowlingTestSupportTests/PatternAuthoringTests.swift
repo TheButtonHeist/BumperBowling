@@ -6,30 +6,31 @@ import Testing
 @Suite("Public pattern authoring")
 struct PatternAuthoringTests {
     @Test(arguments: [SyntaxCounting.perFile, .repository])
-    func countingSeparatesSelectionFromAggregation(counting: SyntaxCounting) throws {
+    func environmentCountSeparatesSelectionFromAggregation(counting: SyntaxCounting) throws {
+        let pattern = structs().filter { $0.node.name.text.hasSuffix("Environment") }
         let harness = RuleTestHarness(Rules.assert(
-            typeAliases(), cardinality: .exactly(1), counting: counting,
-            id: "aliases.one", summary: "One alias per counting unit."
+            pattern, cardinality: .exactly(1), counting: counting,
+            id: "environments.one", summary: "One environment struct per counting unit."
         ))
-        let first = VirtualSourceFile.swift("Sources/A.swift", component: "app", source: "typealias A = Int")
-        let second = VirtualSourceFile.swift("Sources/B.swift", component: "app", source: "typealias B = Int")
+        let first = VirtualSourceFile.swift("Sources/A.swift", component: "app", source: "struct AppEnvironment {}")
+        let second = VirtualSourceFile.swift("Sources/B.swift", component: "app", source: "struct TestEnvironment {}")
         let empty = VirtualSourceFile.swift("Sources/B.swift", component: "app", source: "struct B {}")
         let passing = try harness.evaluate(VirtualRepository { first; counting == .perFile ? second : empty })
         #expect(passing.violations.isEmpty)
 
         let failingFiles: [VirtualSourceFile] = counting == .perFile
-            ? [.swift("Sources/A.swift", component: "app", source: "typealias A = Int\ntypealias Extra = Int"), empty]
+            ? [.swift("Sources/A.swift", component: "app", source: "struct AppEnvironment {}\nstruct ExtraEnvironment {}"), empty]
             : [first, second]
         let failing = try harness.evaluate(VirtualRepository(files: failingFiles))
         let reversed = try harness.evaluate(VirtualRepository(files: failingFiles.reversed()))
         #expect(failing.violations == reversed.violations)
         if counting == .perFile {
-            let defaultHarness = RuleTestHarness(Rules.assert(typeAliases(), cardinality: .exactly(1), id: "aliases.one", summary: "One alias per counting unit."))
+            let defaultHarness = RuleTestHarness(Rules.assert(pattern, cardinality: .exactly(1), id: "environments.one", summary: "One environment struct per counting unit."))
             #expect(try defaultHarness.evaluate(VirtualRepository { first; second }).violations.isEmpty)
             #expect(try defaultHarness.evaluate(VirtualRepository(files: failingFiles)).violations == failing.violations)
             #expect(failing.violations.count == 2)
             #expect(failing.contains(ViolationMatcher(
-                id: "aliases.one", path: "Sources/A.swift", location: SourcePosition(line: 2, column: 1),
+                id: "environments.one", path: "Sources/A.swift", location: SourcePosition(line: 2, column: 1),
                 observed: .exact("2 matching syntax nodes")
             )))
             let missing = try #require(failing.violations.first { $0.path.rawValue == "Sources/B.swift" })
@@ -38,7 +39,7 @@ struct PatternAuthoringTests {
         } else {
             #expect(failing.violations.count == 1)
             #expect(failing.contains(ViolationMatcher(
-                id: "aliases.one", path: "Sources/B.swift", location: SourcePosition(line: 1, column: 1),
+                id: "environments.one", path: "Sources/B.swift", location: SourcePosition(line: 1, column: 1),
                 observed: .exact("2 matching syntax nodes"), expectation: .exact("exactly 1 matching syntax node")
             )))
         }

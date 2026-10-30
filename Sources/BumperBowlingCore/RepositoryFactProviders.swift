@@ -30,9 +30,9 @@ public struct SourceFileFactsProvider: FactProvider {
 public struct ImportOccurrence: Equatable, Sendable {
     public let module: ModuleName
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
 
-    public init(module: ModuleName, path: RelativeFilePath, component: ComponentID) {
+    public init(module: ModuleName, path: RelativeFilePath, component: ComponentID?) {
         self.module = module
         self.path = path
         self.component = component
@@ -68,9 +68,9 @@ public struct ImportInventoryProvider: FactProvider {
 public struct NominalTypeOccurrence: Equatable, Sendable {
     public let type: NominalType
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
 
-    public init(type: NominalType, path: RelativeFilePath, component: ComponentID) {
+    public init(type: NominalType, path: RelativeFilePath, component: ComponentID?) {
         self.type = type
         self.path = path
         self.component = component
@@ -94,9 +94,9 @@ public struct NominalTypeInventoryProvider: FactProvider {
 public struct ExtensionOccurrence: Equatable, Sendable {
     public let declaration: ExtensionDeclaration
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
 
-    public init(declaration: ExtensionDeclaration, path: RelativeFilePath, component: ComponentID) {
+    public init(declaration: ExtensionDeclaration, path: RelativeFilePath, component: ComponentID?) {
         self.declaration = declaration
         self.path = path
         self.component = component
@@ -120,9 +120,9 @@ public struct ExtensionInventoryProvider: FactProvider {
 public struct StoredPropertyOccurrence: Equatable, Sendable {
     public let property: StoredProperty
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
 
-    public init(property: StoredProperty, path: RelativeFilePath, component: ComponentID) {
+    public init(property: StoredProperty, path: RelativeFilePath, component: ComponentID?) {
         self.property = property
         self.path = path
         self.component = component
@@ -148,9 +148,9 @@ public struct StoredPropertyInventoryProvider: FactProvider {
 public struct SyntaxNodeOccurrence: Equatable, Sendable {
     public let node: ObservedSyntaxNode
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
 
-    public init(node: ObservedSyntaxNode, path: RelativeFilePath, component: ComponentID) {
+    public init(node: ObservedSyntaxNode, path: RelativeFilePath, component: ComponentID?) {
         self.node = node
         self.path = path
         self.component = component
@@ -179,7 +179,7 @@ public struct EffectiveAccessOccurrence: Equatable, Sendable {
     /// Declared access capped by every enclosing declaration's access.
     public let effective: AccessLevel
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 
     public init(
@@ -187,7 +187,7 @@ public struct EffectiveAccessOccurrence: Equatable, Sendable {
         declared: AccessLevel,
         effective: AccessLevel,
         path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID?,
         location: SourcePosition?
     ) {
         self.symbol = symbol
@@ -239,14 +239,14 @@ public struct EnclosingDeclarationOccurrence: Equatable, Sendable {
     /// Enclosing nominal or extension names from nearest to outermost.
     public let enclosing: [NominalSymbol]
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 
     public init(
         symbol: NominalSymbol,
         enclosing: [NominalSymbol],
         path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID?,
         location: SourcePosition?
     ) {
         self.symbol = symbol
@@ -286,14 +286,14 @@ public struct MemberReferenceOccurrence: Equatable, Sendable {
     public let base: String?
     public let member: String
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 
     public init(
         base: String?,
         member: String,
         path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID?,
         location: SourcePosition?
     ) {
         self.base = base
@@ -335,9 +335,10 @@ public struct ComponentDependencyProvider: FactProvider {
     public func derive(in context: FactDerivationContext) throws -> [ComponentImportEdge] {
         let rules = try ArchitectureRules(configuration: context.configuration)
         return try context.facts(BuiltInFacts.imports).occurrences.compactMap { occurrence in
-            rules.componentByModule[occurrence.module].map { target in
+            guard let sourceComponent = occurrence.component else { return nil }
+            return rules.componentByModule[occurrence.module].map { target in
                 ComponentImportEdge(
-                    sourceComponent: occurrence.component,
+                    sourceComponent: sourceComponent,
                     targetComponent: target,
                     importedModule: occurrence.module,
                     sourcePath: occurrence.path
@@ -380,7 +381,7 @@ public struct CallGraphFunction: Hashable, Sendable {
     public let parameters: [CallGraphParameterEvidence]
     public let casePatterns: [CasePatternEvidence]
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 
     public init(
@@ -389,7 +390,7 @@ public struct CallGraphFunction: Hashable, Sendable {
         parameters: [CallGraphParameterEvidence],
         casePatterns: [CasePatternEvidence],
         path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID?,
         location: SourcePosition?
     ) {
         self.function = function

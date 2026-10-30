@@ -36,6 +36,47 @@ enum so `Component(.core)` / `MayDependOn(.core)` are compiler-checked.
 
 ## Reports and evaluation
 
+### Generic source rules and scoped subjects
+
+Component ownership is now optional source metadata. `SourceInput`,
+`SourceFileDescriptor`, `SourceFileFacts`, source occurrences, and virtual source
+fixtures use `ComponentID?`. Existing owned inputs still decode. Unowned wire
+inputs can omit the component field.
+
+Use `component?.rawValue` for an optional display value. For component-specific
+logic, require an owner explicitly. Do not assign a placeholder component.
+
+The scanner passes every included Swift file to analysis. `scanSources` no
+longer throws for an unowned file. `scannedFileCount` includes unowned Swift
+files. `SourceCoverage` still reports missing and overlapping ownership when
+enabled. Unsupported languages remain inventory entries without syntax trees.
+
+Syntax-only projects can omit `Architecture`. Library callers can use
+`RepositoryScanner(scan:)` and evaluate a `RuleSet` without architecture
+configuration. Component configuration defaults to an empty array.
+
+Unscoped repository closures keep their one-argument form. Scoped closures now
+receive selected subjects and full context:
+
+```swift
+Rules.repository("project.policy", summary: "Project policy.", scope: selectedFiles) { subjects, context in
+    let paths = Set(subjects.map(\.path))
+    return try context.facts(BuiltInFacts.imports).occurrences
+        .filter { paths.contains($0.path) && $0.module.rawValue == "UIKit" }
+        .map { RuleFailure(path: $0.path, message: "UIKit import in selected sources.") }
+}
+```
+
+This also applies to the scoped `RepositoryRule` initializer. An outside
+diagnostic throws `RuleEvaluationError.diagnosticOutsideScope`; it never
+disappears silently. A positive cardinality over an empty selected file scope
+now fails explicitly. Negative cardinalities also fail explicitly.
+
+The generic Markdown report uses rule terminology instead of architecture
+terminology. JSON diagnostic fields remain unchanged.
+
+### Existing evaluation types
+
 | Removed | Replacement |
 | --- | --- |
 | `ArchitectureLinter` | `RuleSet.evaluate(configuration:repository:)` via `BumperProject.evaluate(_:)` |

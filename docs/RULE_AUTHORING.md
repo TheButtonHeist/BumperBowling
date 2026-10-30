@@ -11,6 +11,11 @@ can express requirements inside declarations and relationships across files.
 The [executable rule recipes](RULE_RECIPES.md) demonstrate these forms through
 the public test harness.
 
+Architecture is optional. The scanner supplies all included Swift sources,
+including unowned files. Source descriptors and derived source facts use an
+optional `component`. Component dependency facts contain only owned sources.
+`SourceCoverage` can report missing or overlapping ownership separately.
+
 Every rule — built-in or project-defined — is a `RuleDefinition` evaluated over
 one immutable `RuleContext`, producing `RuleFailure` values that become
 `RuleViolation`s in one `RuleReport`. There is no second engine, no registry,
@@ -153,6 +158,12 @@ Built-in providers under `BuiltInFacts`:
 | `memberReferences` | Member accesses with optional base names. |
 | `componentDependencies` | Component-to-component import edges. |
 
+With `scope:`, a repository closure takes `{ subjects, context in ... }`.
+Subjects are the selected source files. Context and shared facts still cover
+the full input. Diagnostics must anchor selected subjects. An outside diagnostic
+is an explicit evaluation error. The [factory reference](built-ins/rule-factories.md#repository-rule)
+defines empty scopes and diagnostic anchors.
+
 ### Defining Your Own Fact Provider
 
 A provider is a value type with a stable `id` and a `derive(in:)`:
@@ -171,6 +182,11 @@ struct DeclarationsPerFile: FactProvider {
 Providers may request other providers through `context.facts(_:)`; cycles are
 explicit errors, never deadlocks or empty results. Derivation failures fail the
 run — an analysis error is never an empty match set.
+
+A provider ID identifies its complete derivation, including parameters. Two
+providers with the same ID share the first result or error within one run.
+Different parameter values need different IDs if they produce different facts.
+The cache does not compare provider values or inspect closure captures.
 
 ## Per-File Syntax Rules and Typed Queries
 
@@ -452,7 +468,7 @@ Use SwiftLint for local style, formatting, and code-smell policy.
 Use the Swift compiler for inferred types, symbol resolution, macro expansion,
 protocol conformance truth, and build-target truth.
 
-Use Bumper Bowling when the rule is about architecture policy and SwiftSyntax
+Use Bumper Bowling when the rule is about project policy and SwiftSyntax
 can observe enough source facts to report deterministic evidence.
 
 Every finding should be explainable as:

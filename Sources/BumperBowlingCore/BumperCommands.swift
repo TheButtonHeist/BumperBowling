@@ -111,7 +111,7 @@ public enum BumperCommands {
         var lines: [String] = []
         lines.append("# \(file.path.rawValue)")
         lines.append("")
-        lines.append("Component: \(file.component)")
+        lines.append("Component: \(file.component?.rawValue ?? "none")")
         let imports = file.imports.map(\.rawValue).joined(separator: ", ")
         lines.append("Imports: \(imports.isEmpty ? "none" : imports)")
         lines.append("")

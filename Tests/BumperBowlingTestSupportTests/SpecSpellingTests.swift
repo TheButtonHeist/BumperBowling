@@ -73,8 +73,9 @@ struct SpecSpellingTests {
             severity: .error,
             summary: "UIKit imports are forbidden in the core component.",
             scope: .component(AppComponent.core)
-        ) { context in
-            try context.facts(uikitImports).map { occurrence in
+        ) { subjects, context in
+            let paths = Set(subjects.map(\.path))
+            return try context.facts(uikitImports).filter { paths.contains($0.path) }.map { occurrence in
                 RuleFailure(path: occurrence.path, message: "UIKit is not allowed here.")
             }
         }

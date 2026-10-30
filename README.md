@@ -12,7 +12,7 @@ A feature has `State`, `Action`, and `View`. Dependencies point toward Domain.
 Only `AppBootstrap` constructs live services. Every SwiftUI view can be
 constructed in at least one preview.
 
-Those rules are architecture. When they live only in documentation and code
+These are project policies. When they live only in documentation and code
 review, every developer or agent has to rediscover them.
 
 Bumper Bowling turns them into Swift rules with source-level failures. You
@@ -74,7 +74,20 @@ inside a preview in the same file. It does not resolve compiler type identity.
 The [rule recipes](docs/RULE_RECIPES.md) also cover arbitrary syntax,
 requirements inside each type, and relationships across files.
 
-That same composition can enforce the shape of an app.
+## Syntax Rules Without An Architecture
+
+A project can run syntax rules without declaring components:
+
+```swift
+let bumper = BumperProject {
+    Included { "Sources" }
+    Rules { swiftUIPreviews }
+}
+```
+
+Every included Swift file reaches syntax analysis, including files without a
+component owner. Architecture declarations add ownership and dependency policy.
+Coverage checks can report unowned files without hiding them from custom rules.
 
 ## Give The Architecture A Vocabulary
 

@@ -79,8 +79,8 @@ public struct RepositoryFacts: Equatable, Sendable {
         self.files = files
         self.dependencyEdges = Set(
             files.flatMap { file in
-                file.imports.map { importedModule in
-                    DependencyEdge(sourceComponent: file.component, importedModule: importedModule)
+                file.imports.compactMap { importedModule in
+                    file.component.map { DependencyEdge(sourceComponent: $0, importedModule: importedModule) }
                 }
             }
         )
@@ -115,17 +115,18 @@ public struct ArchitectureGraph: Equatable, Sendable {
     public init(nodes: RepositoryFacts, rules: ArchitectureRules) {
         self.coverage = nodes.coverage
         self.sourceFiles = nodes.files
-        self.componentNodes = Set(nodes.files.map(\.component))
+        self.componentNodes = Set(nodes.files.compactMap(\.component))
         self.moduleImportEdges = nodes.dependencyEdges
         self.componentImportEdges = Set(
             nodes.files.flatMap { file in
                 file.imports.compactMap { importedModule in
-                    guard let targetComponent = rules.componentByModule[importedModule] else {
+                    guard let sourceComponent = file.component,
+                          let targetComponent = rules.componentByModule[importedModule] else {
                         return nil
                     }
 
                     return ComponentImportEdge(
-                        sourceComponent: file.component,
+                        sourceComponent: sourceComponent,
                         targetComponent: targetComponent,
                         importedModule: importedModule,
                         sourcePath: file.path
@@ -198,7 +199,7 @@ public struct ArchitectureGraph: Equatable, Sendable {
 
 public struct SourceFileFacts: Equatable, Sendable {
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let source: String?
     public let imports: [ModuleName]
     public let nominalTypes: [NominalType]
@@ -212,7 +213,7 @@ public struct SourceFileFacts: Equatable, Sendable {
 
     public init(
         path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID? = nil,
         source: String? = nil,
         imports: [ModuleName],
         nominalTypes: [NominalType] = [],
@@ -243,7 +244,7 @@ public struct SourceFileFacts: Equatable, Sendable {
         self.syntaxNodes = syntaxNodes
     }
 
-    init(path: RelativeFilePath, component: ComponentID, source: String? = nil, nodes: [CollectedSourceFact]) {
+    init(path: RelativeFilePath, component: ComponentID? = nil, source: String? = nil, nodes: [CollectedSourceFact]) {
         let summary = SourceFactSummary(facts: nodes)
 
         self.init(

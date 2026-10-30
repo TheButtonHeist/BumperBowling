@@ -31,7 +31,7 @@ public struct DeclarationContract: Equatable, Sendable {
     public let attributes: [AttributeName]
     public let types: [ContractTypeReference]
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition
 }
 

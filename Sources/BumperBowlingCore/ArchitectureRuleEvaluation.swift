@@ -13,7 +13,7 @@ extension ArchitectureRule {
                 return violation(
                     severity: setting.severity,
                     path: importFact.file.path,
-                    message: "\(importFact.file.component) imports forbidden module \(importFact.module)"
+                    message: "\(importFact.file.component?.rawValue ?? "Unowned source") imports forbidden module \(importFact.module)"
                 )
             }
         }

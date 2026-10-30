@@ -1,8 +1,10 @@
 # Rule Recipes
 
-These recipes use public APIs and ordinary Swift. Each rule has paired passing
-and failing fixtures in [RuleAuthoringRecipeTests.swift](../Tests/BumperBowlingTestSupportTests/RuleAuthoringRecipeTests.swift).
-CI runs these fixtures with the package tests.
+These five recipes use public APIs and ordinary Swift. Paired passing and
+failing fixtures live in [RuleAuthoringRecipeTests.swift](../Tests/BumperBowlingTestSupportTests/RuleAuthoringRecipeTests.swift)
+and [PatternAuthoringTests.swift](../Tests/BumperBowlingTestSupportTests/PatternAuthoringTests.swift).
+CI runs these fixtures with the package tests. Syntax-only fixtures do not need
+component declarations.
 
 Rules share parsed syntax and the existing evaluator. They do not establish
 compiler type identity or runtime behavior.
@@ -84,12 +86,14 @@ The repository rule compares these observations:
 ```swift
 let routeRegistrations = Rules.repository(
     "routes.registration",
-    summary: "Each AppRoute case has exactly one explicit registration."
-) { context in
+    summary: "Each AppRoute case has exactly one explicit registration.",
+    scope: .files(["Sources/App/Routes.swift"])
+) { subjects, context in
+    let paths = Set(subjects.map(\.path))
     let inventory = try context.facts(routeInventory)
     let counts = Dictionary(grouping: inventory.registrations, by: { $0 })
         .mapValues(\.count)
-    return inventory.cases.compactMap { route in
+    return inventory.cases.filter { paths.contains($0.file.path) }.compactMap { route in
         let name = route.node.name.text
         let count = counts[name, default: 0]
         guard count != 1 else { return nil }
@@ -108,10 +112,67 @@ The passing fixture places registrations in separate files. The failing
 fixture has a duplicate registration and a missing registration. An unrelated
 receiver call, `other.register(.detail)`, cannot satisfy the requirement.
 
+Only the selected route file supplies subjects. Shared facts retain registration
+calls from other files. An unrelated `AppRoute` declaration outside the selected
+file does not need registrations under this rule. Diagnostics anchor the
+selected route cases.
+
 The matching convention is explicit syntax. The rule does not resolve overloads,
 aliases, conditional execution, or runtime registration. It does not reject
 registration names absent from `AppRoute`. It does not require `AppRoute` to
 exist. Those are separate policies.
+
+## A repository-wide count
+
+This convention permits exactly one struct whose name ends in `Environment`
+across the selected source files.
+
+```swift
+Rules.assert(
+    structs().filter { $0.node.name.text.hasSuffix("Environment") },
+    cardinality: .exactly(1),
+    counting: .repository,
+    id: "environments.one",
+    summary: "One environment struct per counting unit."
+)
+```
+
+`environmentCountSeparatesSelectionFromAggregation` in
+[PatternAuthoringTests.swift](../Tests/BumperBowlingTestSupportTests/PatternAuthoringTests.swift)
+demonstrates both counting modes. Repository counting accepts one environment
+and an unrelated file. It reports a second environment in another file at that
+declaration's location. Per-file counting applies the requirement independently.
+
+The repair is to consolidate environment declarations or narrow the selected
+files to the intended application. This is a naming convention, not compiler
+type identity. A project with several independent applications needs a separate
+scope for each application. Remove this rule if that convention no longer fits.
+
+## A component policy
+
+This project permits imports of `UI` only from its `ui` component.
+
+```swift
+enum AppComponent: String, ComponentKey { case ui }
+
+let uiImports = Rules.importOwnership(
+    ["UI"],
+    allowed: .component(AppComponent.ui),
+    id: "components.ui_imports"
+)
+```
+
+The public-harness fixtures accept the import in an owned UI source. They
+report the import in a domain source and in an unowned source. Missing ownership
+never grants permission to enter a component scope.
+
+The repair is to remove the import or move the UI code into its component.
+Architecture declarations supply real path ownership. Component dependency
+rules can also compare imports with the declared dependency graph.
+
+This recipe matches the explicit module spelling `UI`. It does not discover
+compiler build targets or infer dependencies from symbol use. Remove this rule
+if the project no longer separates UI imports by component.
 
 ## Adoption and removal
 

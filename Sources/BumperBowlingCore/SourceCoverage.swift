@@ -25,7 +25,7 @@ public struct SourceCoverageSummary: Equatable, Sendable, Codable {
         let owners = swiftPaths.map { path in
             rules.components.filter { component in component.paths.contains { $0.contains(path) } }
         }
-        let scannedFileCount = owners.filter { !$0.isEmpty }.count
+        let scannedFileCount = swiftPaths.count
         self.includedFileCount = paths.count
         self.scannedFileCount = scannedFileCount
         self.unownedPaths = zip(swiftPaths, owners).compactMap { $1.isEmpty ? $0 : nil }

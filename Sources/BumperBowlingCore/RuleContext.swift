@@ -8,7 +8,7 @@ public struct RepositoryInput: Equatable, Sendable, Codable {
     public let files: [SourceInput]
     public let coverage: SourceCoverageSummary?
 
-    public init(architecture: ArchitectureConfiguration, files: [SourceInput], coverage: SourceCoverageSummary? = nil) {
+    public init(architecture: ArchitectureConfiguration = ArchitectureConfiguration(), files: [SourceInput], coverage: SourceCoverageSummary? = nil) {
         self.architecture = architecture
         self.coverage = coverage
         self.files = files
@@ -18,10 +18,10 @@ public struct RepositoryInput: Equatable, Sendable, Codable {
 /// One raw source file crossing the host/runner boundary.
 public struct SourceInput: Equatable, Sendable, Codable {
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let source: String
 
-    public init(path: RelativeFilePath, component: ComponentID, source: String) {
+    public init(path: RelativeFilePath, component: ComponentID? = nil, source: String) {
         self.path = path
         self.component = component
         self.source = source
@@ -62,9 +62,10 @@ public struct RepositorySyntax: Sendable {
 /// duplicate syntax facts.
 public struct SourceFileDescriptor: Equatable, Hashable, Sendable, Codable {
     public let path: RelativeFilePath
-    public let component: ComponentID
+    /// Optional architecture metadata. Unowned sources remain available to rules.
+    public let component: ComponentID?
 
-    public init(path: RelativeFilePath, component: ComponentID) {
+    public init(path: RelativeFilePath, component: ComponentID? = nil) {
         self.path = path
         self.component = component
     }

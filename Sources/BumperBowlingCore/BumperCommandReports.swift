@@ -23,7 +23,7 @@ public struct ScanReport: Equatable, Sendable, Codable {
     public init(repository: RepositoryFacts) {
         self.coverage = repository.coverage
         self.fileCount = repository.files.count
-        self.components = Set(repository.files.map(\.component.rawValue)).sorted()
+        self.components = Set(repository.files.compactMap { $0.component?.rawValue }).sorted()
         self.dependencies = repository.dependencyEdges
             .map(ScanDependency.init)
             .sorted { lhs, rhs in

@@ -164,7 +164,7 @@ let projectRules = RuleSet {
             .map { occurrence in
                 RuleFailure(
                     path: occurrence.path,
-                    message: "\(occurrence.component.rawValue) imports non-allowlisted module \(occurrence.module.rawValue)",
+                    message: "\(occurrence.component?.rawValue ?? "Unowned source") imports non-allowlisted module \(occurrence.module.rawValue)",
                     evidence: ViolationEvidence(
                         observed: occurrence.module.rawValue,
                         expectation: "allowed imports: Foundation"
@@ -179,6 +179,14 @@ Bumper Bowling owns the scan. The host sends the scanned source files to the
 cached project runner as Codable `RepositoryInput`; the runner parses each file
 once, evaluates all rules, and returns one Codable `RuleReport`. Closures never
 cross the process boundary, and rule code does not traverse the filesystem.
+
+The scan includes all selected Swift sources. Component ownership is optional
+metadata, not a condition for syntax analysis. A `BumperProject` can contain
+`Included` and `Rules` without an `Architecture` block.
+
+Scoped repository closures receive `{ subjects, context in ... }`. Subjects are
+selected files. The full context supports cross-file lookups. A diagnostic
+outside the selected subjects fails evaluation explicitly.
 
 Match rules evaluate typed SwiftSyntax nodes and retain their file context:
 
@@ -406,7 +414,7 @@ Paths with only unsupported source languages produce notes, so an intentional Ob
 Both scan and lint JSON include a `coverage` object:
 
 - `includedFileCount`: included source files, including recognized unsupported languages.
-- `scannedFileCount`: owned Swift files passed to syntax analysis.
+- `scannedFileCount`: all included Swift files passed to syntax analysis, including unowned files.
 - `unownedFileCount` and `unownedPaths`: included Swift files without owners.
 - `overlappingPaths`: included Swift files with multiple component owners.
 - `languages`: counts by file extension, with an explicit `isSupported` flag.

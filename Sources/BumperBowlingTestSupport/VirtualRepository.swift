@@ -4,10 +4,10 @@ import Foundation
 /// One in-memory Swift source file. No checkout, no filesystem.
 public struct VirtualSourceFile: Sendable {
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let source: String
 
-    public init(path: RelativeFilePath, component: ComponentID, source: String) {
+    public init(path: RelativeFilePath, component: ComponentID? = nil, source: String) {
         self.path = path
         self.component = component
         self.source = source
@@ -15,7 +15,7 @@ public struct VirtualSourceFile: Sendable {
 
     public static func swift(
         _ path: RelativeFilePath,
-        component: ComponentID,
+        component: ComponentID? = nil,
         source: String
     ) -> Self {
         VirtualSourceFile(path: path, component: component, source: source)

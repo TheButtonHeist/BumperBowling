@@ -34,13 +34,13 @@ public struct RuleTestHarness: Sendable {
         let componentPaths = Dictionary(grouping: repository.files, by: \.component)
         return ArchitectureConfiguration(
             components: componentPaths
-                .sorted { lhs, rhs in lhs.key.rawValue < rhs.key.rawValue }
-                .map { component, files in
-                    ComponentConfiguration(
+                .compactMap { component, files in
+                    guard let component else { return nil }
+                    return ComponentConfiguration(
                         name: component.rawValue,
                         paths: files.map(\.path.rawValue)
                     )
-                }
+                }.sorted { $0.name < $1.name }
         )
     }
 }

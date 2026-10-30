@@ -6,19 +6,19 @@ public struct SwiftFileParser: Sendable {
     public init() {}
 
     /// Parses in-memory source into the same `SourceFileFacts` the scanner
-    /// produces, under a placeholder path and component.
+    /// produces, under a placeholder path without component ownership.
     public func parse(_ source: String) -> SourceFileFacts {
         let tree = Parser.parse(source: source)
         let visitor = SourceVisitor(source: source, locationConverter: SourceLocationConverter(fileName: "", tree: tree))
         visitor.walk(tree)
 
-        return SourceFileFacts(path: "InMemory.swift", component: .core, source: source, nodes: visitor.nodes)
+        return SourceFileFacts(path: "InMemory.swift", source: source, nodes: visitor.nodes)
     }
 
     public func parseFile(
         at url: URL,
         relativePath: RelativeFilePath,
-        component: ComponentID
+        component: ComponentID?
     ) throws -> SourceFileFacts {
         guard let source = try? String(contentsOf: url, encoding: .utf8) else {
             throw BumperError.unreadableFile(relativePath.rawValue)
