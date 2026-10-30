@@ -180,7 +180,7 @@ cached project runner as Codable `RepositoryInput`; the runner parses each file
 once, evaluates all rules, and returns one Codable `RuleReport`. Closures never
 cross the process boundary, and rule code does not traverse the filesystem.
 
-Per-file syntax rules evaluate `SourceFileContext` values with raw SwiftSyntax:
+Match rules evaluate typed SwiftSyntax nodes and retain their file context:
 
 ```swift
 // .bumper/Sources/ProjectRules.swift
@@ -188,26 +188,14 @@ import BumperBowlingCore
 import SwiftSyntax
 
 let projectRules = RuleSet {
-    Rules.files(
-        "core.no_tuple_api",
+    Rules.each(
+        SyntaxQuery<TupleTypeSyntax>(),
+        id: "core.no_tuple_api",
         severity: .error,
-        summary: "Public core APIs use named result types."
-    ) { file in
-        let visitor = TupleTypeCollector(viewMode: .sourceAccurate)
-        visitor.walk(file.syntax)
-
-        return visitor.tuples.map { tuple in
-            file.failure(at: tuple, message: "Tuple API must use a named type.")
-        }
-    }
-}
-
-private final class TupleTypeCollector: SyntaxVisitor {
-    private(set) var tuples: [TupleTypeSyntax] = []
-
-    override func visit(_ node: TupleTypeSyntax) -> SyntaxVisitorContinueKind {
-        tuples.append(node)
-        return .skipChildren
+        summary: "Core code uses named types instead of tuples.",
+        scope: .under("Sources/Core")
+    ) { tuple in
+        [tuple.failure(message: "Tuple type must use a named type.")]
     }
 }
 ```

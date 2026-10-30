@@ -180,16 +180,12 @@ each file exactly once; every rule shares the same trees.
 Typed queries compose over the parsed file and preserve node types:
 
 ```swift
-Rules.files(
-    "project.no_alternate_aliases",
+Rules.each(
+    typeAliases().aliasing("AccessibilityTarget"),
+    id: "project.no_alternate_aliases",
     summary: "AccessibilityTarget has one spelling."
-) { file in
-    typeAliases()
-        .aliasing(NominalSymbol("AccessibilityTarget"))
-        .matches(in: file)
-        .map { match in
-            match.failure(message: "\(match.node.name.text) aliases AccessibilityTarget.")
-        }
+) { match in
+    [match.failure(message: "\(match.node.name.text) aliases AccessibilityTarget.")]
 }
 ```
 

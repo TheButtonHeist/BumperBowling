@@ -368,27 +368,19 @@ extension Rules {
         id: RuleID = RuleID("no_alternate_aliases"),
         severity: Severity = .error
     ) -> SyntaxRule {
-        SyntaxRule(
-            metadata: RuleMetadata(
-                id: id,
-                severity: severity,
-                summary: "\(symbol.name) has no alternate alias representations."
-            ),
-            scope: .repository
-        ) { file in
-            typeAliases()
-                .aliasing(symbol)
-                .excluding(allowing)
-                .matches(in: file)
-                .map { match in
-                    match.failure(
-                        message: "\(match.node.name.text) aliases \(symbol.name).",
-                        evidence: ViolationEvidence(
-                            observed: match.node.trimmedDescription,
-                            expectation: "use \(symbol.name) directly"
-                        )
-                    )
-                }
+        each(
+            typeAliases().aliasing(symbol).excluding(allowing),
+            id: id.rawValue,
+            severity: severity,
+            summary: "\(symbol.name) has no alternate alias representations."
+        ) { match in
+            [match.failure(
+                message: "\(match.node.name.text) aliases \(symbol.name).",
+                evidence: ViolationEvidence(
+                    observed: match.node.trimmedDescription,
+                    expectation: "use \(symbol.name) directly"
+                )
+            )]
         }
     }
 

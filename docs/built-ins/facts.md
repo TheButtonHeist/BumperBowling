@@ -109,16 +109,14 @@ in `Actor` have no special meaning. Other attributes retain their spelling and
 an unresolved result.
 
 ```swift
-Rules.files("project.callback_policy", summary: "Require explicit callback analysis.") { file in
-    let resolver = LexicalTypeResolver(file: file)
-    return variables().matches(in: file).flatMap { variable -> [RuleFailure] in
-        variable.node.bindings.compactMap { binding in
-            guard binding.bumper.identifierName == "onChange",
-                  let type = binding.typeAnnotation?.type else { return nil }
-            let callback = resolver.resolve(type)
-            guard callback.failure != nil else { return nil }
-            return file.failure(at: type, message: "Callback analysis needs more context.")
-        }
+Rules.each(variables(), id: "project.callback_policy", summary: "Require explicit callback analysis.") { variable in
+    let resolver = LexicalTypeResolver(file: variable.file)
+    return variable.node.bindings.compactMap { binding in
+        guard binding.bumper.identifierName == "onChange",
+              let type = binding.typeAnnotation?.type else { return nil }
+        let callback = resolver.resolve(type)
+        guard callback.failure != nil else { return nil }
+        return variable.file.failure(at: type, message: "Callback analysis needs more context.")
     }
 }
 ```

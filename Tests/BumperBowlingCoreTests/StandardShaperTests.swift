@@ -223,15 +223,28 @@ struct StandardShaperTests {
             allowing: .under(RelativePathPrefix("Sources/DSL"))
         )
 
-        let report = try RuleTestHarness(rule).evaluate(
+        let harness = RuleTestHarness(rule)
+        let passing = try harness.evaluate(VirtualRepository {
+            VirtualSourceFile.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = AccessibilityTarget")
+            VirtualSourceFile.swift("Sources/Feature/Model.swift", component: "core", source: "typealias Value = OtherTarget")
+        })
+        #expect(passing.violations.isEmpty)
+
+        let report = try harness.evaluate(
             VirtualRepository {
                 VirtualSourceFile.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = AccessibilityTarget")
                 VirtualSourceFile.swift("Sources/Feature/Alias.swift", component: "core", source: "typealias MyTarget = AccessibilityTarget")
             }
         )
 
-        #expect(report.violations.map(\.path.rawValue) == ["Sources/Feature/Alias.swift"])
-        #expect(report.violations.first?.message.contains("MyTarget") == true)
+        #expect(report.violations.count == 1)
+        #expect(report.contains(ViolationMatcher(
+            id: "no_alternate_aliases", path: "Sources/Feature/Alias.swift",
+            location: SourcePosition(line: 1, column: 1),
+            message: .exact("MyTarget aliases AccessibilityTarget."),
+            observed: .exact("typealias MyTarget = AccessibilityTarget"),
+            expectation: .exact("use AccessibilityTarget directly")
+        )))
     }
 
     @Test

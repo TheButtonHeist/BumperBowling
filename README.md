@@ -174,6 +174,8 @@ SwiftSyntax -> typed observations -> scopes -> rules -> source evidence
 | Reusable architecture patterns | `ComponentRequirement` and `ComponentShape` |
 | Common ownership and construction rules | `Rules.*` shapers |
 | Typed syntax matches | `SyntaxQuery` |
+| Requirements for each typed match | `Rules.each` |
+| Counts per file or across selected files | `Rules.assert` |
 | Rules over each file | `Rules.files` |
 | Repository-wide analysis | `BuiltInFacts` and `Rules.repository` |
 | Full SwiftSyntax access | `Rules.visitor` and `SyntaxVisitor` |
