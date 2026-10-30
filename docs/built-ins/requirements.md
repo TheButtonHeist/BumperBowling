@@ -30,6 +30,11 @@ Component(.domain) {
 }
 ```
 
+These are opt-in conventions. The enum-state requirement applies per selected
+file. For a requirement about each type, use `Rules.each` and the
+[per-declaration recipe](../RULE_RECIPES.md#3-requirements-inside-each-declaration).
+A syntax shape does not establish runtime state-machine behavior.
+
 ## Composed Requirements
 
 These conveniences only combine the primitives above.

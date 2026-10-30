@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### Breaking
+
+- Removed `Rules.canonicalConstruction`. Use `Rules.constructionOwnership` with
+  `allowed:`. Existing baselines can retain `id: "canonical_construction"`.
+  Repository-specific IDs remain unchanged.
+- Removed `Rules.singleNominalSpelling`. The
+  [nominal-name recipe](docs/RULE_RECIPES.md#an-explicit-nominal-name-query)
+  preserves its nominal-only selection through `Rules.forbid` and a query.
+  `Rules.declarationOwnership` also matches functions and variables, so it is
+  not an exact replacement.
+- Removed the file-based `Rules.maximumStoredProperties` and
+  `Rules.stateMachineShape` factories. Use `Rules.each` with selected declarations
+  and explicit member or case predicates. The
+  [per-declaration recipe](docs/RULE_RECIPES.md#3-requirements-inside-each-declaration)
+  demonstrates both missing and excess direct members without a file-layout
+  assumption.
+
+- `TypeReferenceOccurrence.Kind` includes member bindings, subscript parameters
+  and returns, enum payloads, and associated-type defaults. Exhaustive switches
+  must account for these cases.
+
+### Fixed
+
+- Public API ownership now includes initializers, subscripts, and default public
+  members in extensions. The named inventory reuses declaration contracts and
+  their lexical access defaults. It remains a syntax inventory, not a compiler
+  visibility proof.
+- Disallowed type references now include member annotations, subscript
+  signatures, enum payloads, and associated-type defaults. Findings point to the
+  explicit type syntax. Existing declaration contracts supply these facts.
+
+### Added
+
+- A tested progression from a built-in boundary to arbitrary syntax,
+  per-declaration requirements, repository counts, shared facts, and a call
+  graph. Paired fixtures include scope boundaries and plausible near misses.
+- `DeclarationContract.declaredAccess` exposes explicit access or lexical
+  defaults independently of unresolved effective access.
+
 ### Removed
 
 - Dead public API with no callers or documentation, found by audit:

@@ -2,65 +2,12 @@ import BumperBowlingCore
 import BumperBowlingTestSupport
 import Testing
 
-/// The exact authoring spellings from the open shaper architecture spec.
-/// These fixtures compile against public imports only; if a signature drifts
-/// from the spec's letter, this file stops building.
 private enum AppComponent: String, ComponentKey {
     case core
-    case plans
-    case dsl
 }
 
 @Suite("Spec authoring spellings")
 struct SpecSpellingTests {
-    @Test
-    func shaperFactoriesAcceptSpecSpellings() throws {
-        let observationBuilderPaths: Set<RelativeFilePath> = ["Sources/Builders/Builder.swift"]
-        let jsonBoundaryScope = RuleScope.under("Sources/Boundary")
-        let hierarchyTraversalOwners = RuleScope.under("Sources/Traversal")
-        let interfaceGraphBuilders = RuleScope.under("Sources/Builders")
-
-        let rules = RuleSet {
-            Rules.singleDeclaration(
-                "AccessibilityTarget",
-                owner: "Sources/ThePlans/AccessibilityTarget.swift"
-            )
-            Rules.constructionOwnership(
-                "InterfaceObservation",
-                allowed: .files(observationBuilderPaths)
-            )
-            Rules.boundaryOnly(
-                function: "JSONDecoder.decode",
-                allowed: jsonBoundaryScope
-            )
-            Rules.noAlternateAliases(
-                "AccessibilityTarget",
-                allowing: .component(AppComponent.dsl)
-            )
-            Rules.canonicalTraversal(
-                root: "AccessibilityHierarchy",
-                structuralCase: "container",
-                owners: hierarchyTraversalOwners
-            )
-            Rules.canonicalConstruction(
-                "InterfaceGraph",
-                owners: interfaceGraphBuilders
-            )
-            Rules.singleNominalSpelling(
-                suffix: "Expr",
-                owner: .component(AppComponent.plans)
-            )
-            Rules.forbid(
-                typeAliases().aliasing("AccessibilityTarget"),
-                id: "app.no_target_aliases",
-                severity: .error,
-                message: { _ in "AccessibilityTarget must not have an alternate alias" }
-            )
-        }
-
-        #expect(rules.rules.count == 8)
-    }
-
     @Test
     func derivedFactAndClosureRulesAcceptSpecSpellings() throws {
         let uikitImports = DerivedFact<[ImportOccurrence]>("app.uikit_imports") { context in

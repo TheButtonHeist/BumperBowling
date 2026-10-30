@@ -4,26 +4,23 @@
 [![Release](https://img.shields.io/github/v/release/TheButtonHeist/BumperBowling)](https://github.com/TheButtonHeist/BumperBowling/releases/latest)
 [![License](https://img.shields.io/github/license/TheButtonHeist/BumperBowling)](LICENSE)
 
-**Turn your Swift repository's unwritten rules into rules everyone can run.**
+**Turn your Swift repository’s unwritten rules into rules everyone can run.**
 
-Your codebase relies on rules that the compiler cannot see.
+Some decisions keep returning to code review.
 
-A feature has `State`, `Action`, and `View`. Dependencies point toward Domain.
-Only `AppBootstrap` constructs live services. Every SwiftUI view can be
-constructed in at least one preview.
+A feature needs its own `State` and `Action`. Live services belong in bootstrap.
+Every view needs a preview. Each route needs one registration.
 
-These are project policies. When they live only in documentation and code
-review, every developer or agent has to rediscover them.
+The decisions are settled. People and agents still need reminders.
 
-Bumper Bowling turns them into Swift rules with source-level failures. You
-define the lane. Bumper Bowling catches changes that leave it.
+Bumper Bowling turns those decisions into Swift rules. Run them before review.
+Run them in CI. Get a failure that points to the code and explains the repair.
 
-Rules can inspect any SwiftSyntax node type and combine observations across
-files. The architecture factories provide short forms for common policies.
-Custom rules use the same evaluator, tests, and reports.
+You define the lane. The bumpers catch changes that leave it.
 
-Take the preview rule. The compiler knows that `CheckoutView` conforms to
-`View`, but it cannot require a preview that constructs it.
+## One rule, one useful failure
+
+Take a familiar convention: every feature view needs a preview.
 
 ```swift
 struct CheckoutView: View {
@@ -33,7 +30,7 @@ struct CheckoutView: View {
 }
 ```
 
-Write that rule in Swift:
+The compiler accepts this view. Your project can require a preview too:
 
 ```swift
 import BumperBowlingCore
@@ -42,7 +39,7 @@ import SwiftSyntax
 let swiftUIPreviews = Rules.each(
     structs().inheriting("View"),
     id: "app.swiftui_preview",
-    summary: "Each SwiftUI view is constructed by at least one preview.",
+    summary: "Each feature view has a preview in the same file.",
     scope: .under("Sources/Features")
 ) { view in
     let previews = macroExpansions().named("Preview").matches(in: view.file)
@@ -60,23 +57,7 @@ let swiftUIPreviews = Rules.each(
 }
 ```
 
-```text
-Sources/Features/Checkout/CheckoutView.swift:1:1
-CheckoutView needs a #Preview that constructs CheckoutView. (app.swiftui_preview)
-```
-
-SwiftSyntax found the declarations, inheritance clause, macro, and constructor
-call. Bumper Bowling composed those observations into one scoped rule with
-source evidence.
-
-This example matches explicit `View` inheritance and constructor spellings
-inside a preview in the same file. It does not resolve compiler type identity.
-The [rule recipes](docs/RULE_RECIPES.md) also cover arbitrary syntax,
-requirements inside each type, and relationships across files.
-
-## Syntax Rules Without An Architecture
-
-A project can run syntax rules without declaring components:
+Add the rule to `BumperBowling.swift`:
 
 ```swift
 let bumper = BumperProject {
@@ -85,35 +66,71 @@ let bumper = BumperProject {
 }
 ```
 
-Every included Swift file reaches syntax analysis, including files without a
-component owner. Architecture declarations add ownership and dependency policy.
-Coverage checks can report unowned files without hiding them from custom rules.
+Then run `bumper lint .`:
 
-## Give The Architecture A Vocabulary
-
-Name the patterns that define the repository:
-
-```swift
-extension ComponentShape {
-    static let feature = ComponentShape {
-        MayUse(.foundation, .swiftUI)
-        Requires(
-            .explicitDomainSurfaces,
-            .typedIdentity,
-            .immutableStoredState
-        )
-        Declares("State", "Action", "View")
-    }
-}
+```text
+Sources/Features/Checkout/CheckoutView.swift:1:1
+CheckoutView needs a #Preview that constructs CheckoutView. (app.swiftui_preview)
 ```
 
-Apply those patterns to real source:
+The rule has a purpose, a scope, and a repair. The same result serves a developer,
+a reviewer, or an agent.
+
+This example checks explicit `View` inheritance and constructor names inside a
+`#Preview` in the same file. It does not resolve compiler type identity.
+
+## The rule is yours
+
+Rules can inspect any SwiftSyntax node type. Use a typed query for the nodes you
+need, then ordinary Swift to describe the requirement.
+
+Rules can require declarations, limit counts, protect boundaries, or compare
+observations across files. A rule can require something to exist, as well as
+report something that does not belong.
+
+| Project convention | Expression |
+| --- | --- |
+| Each feature owns one state type and one action type | `Rules.each` over feature structs |
+| One environment declaration across selected files | `Rules.assert` with `counting: .repository` |
+| Each route has exactly one registration across files | `Rules.repository` with shared facts |
+| A directory uses named analytics payloads | `Rules.forbid` over dictionary literal syntax |
+| Live service construction stays in bootstrap code | `Rules.constructionOwnership` |
+| Imports obey component dependencies | The architecture DSL and `DependencyBoundaries` |
+
+The [rule recipes](docs/RULE_RECIPES.md) progress from a built-in boundary rule
+to analysis across files and a derived call graph. Each example includes its
+reason, scope, passing and failing fixtures, diagnostics, and limits.
+
+Bumper Bowling supplies the queries, shared facts, evaluator, test support, and
+reports. Your repository supplies the conventions.
+
+## Ordinary Swift, all the way down
+
+Start with a built-in factory for a policy it already expresses. Use
+`Rules.each` for a requirement on each typed match. Use `Rules.repository` and
+shared facts for relationships across files.
+
+`SyntaxQuery<Node>` accepts any SwiftSyntax node type. A match keeps its typed
+node, file, and source location. Common facts have direct access, such as
+`variable.isMutable` and `variable.lexicalContext`.
+
+For a custom walk, use a `SyntaxVisitor`. All these forms share the evaluator,
+parsed syntax, fact cache, and reports.
+
+The [authoring guide](docs/RULE_AUTHORING.md) covers the complete API.
+
+## Add architecture where it helps
+
+Syntax rules need no component declarations. Every included Swift file reaches
+analysis, including files without an owner.
+
+Architecture declarations add a vocabulary for ownership, imports, dependencies,
+and recurring component patterns:
 
 ```swift
 enum AppComponent: String, ComponentKey {
     case domain
     case checkout
-    case app
 }
 
 let bumper = BumperProject {
@@ -124,21 +141,13 @@ let bumper = BumperProject {
             Owns("Sources/Domain")
             Modules("Domain")
             MayUse(.foundation)
-            Requires(.pureDomain)
         }
 
         Component(.checkout) {
             Owns("Sources/Features/Checkout")
             Modules("CheckoutFeature")
             MayDependOn(.domain)
-            Applies(.feature)
-        }
-
-        Component(.app) {
-            Owns("Sources/App")
-            Modules("App")
-            MayDependOn(.domain, .checkout)
-            MayUse(.foundation, .swiftUI, .networking)
+            MayUse(.foundation, .swiftUI)
         }
     }
 
@@ -148,131 +157,117 @@ let bumper = BumperProject {
         SourceCoverage(.error)
         AcyclicDeclaredDependencies(.error)
         swiftUIPreviews
-
-        Rules.canonicalConstruction(
-            "AppEnvironment",
-            owners: .under("Sources/App/Bootstrap")
-        )
-
-        Rules.boundaryOnly(
-            function: "JSONDecoder.decode",
-            allowed: .under("Sources/Infrastructure/Decoding")
-        )
-
-        Rules.canonicalTraversal(
-            root: "RouteTree",
-            structuralCase: "branch",
-            owners: .under("Sources/Navigation/Traversal")
-        )
     }
 }
 ```
 
-This policy keeps dependencies pointed in the declared direction. It gives
-every file one owner. It also protects construction, decoding, traversal, and
-SwiftUI preview patterns.
+Components use your project’s names. `ComponentShape` and
+`ComponentRequirement` can name recurring policies as the architecture grows.
 
-The repository owns names such as `.feature` and `app.swiftui_preview`.
-Bumper Bowling supplies the composition, evaluation, tests, and reports.
+Ownership checks remain separate from source discovery. `SourceCoverage` can
+report missing or overlapping ownership while custom syntax rules still inspect
+the included files.
 
-```text
-SwiftSyntax -> typed observations -> scopes -> rules -> source evidence
-```
+## Start small. Keep the bumpers useful.
 
-## Start High. Drop Down When The Rule Demands It.
+Start with one repeated review comment. Turn it into a rule with a clear repair.
+Add rules as the project finds decisions worth protecting. Give each rule:
 
-| Need | Use |
-| --- | --- |
-| Components, ownership, and dependencies | Architecture DSL |
-| Reusable architecture patterns | `ComponentRequirement` and `ComponentShape` |
-| Common ownership and construction rules | `Rules.*` shapers |
-| Typed syntax matches | `SyntaxQuery` |
-| Requirements for each typed match | `Rules.each` |
-| Counts per file or across selected files | `Rules.assert` |
-| Rules over each file | `Rules.files` |
-| Repository-wide analysis | `BuiltInFacts` and `Rules.repository` |
-| Full SwiftSyntax access | `Rules.visitor` and `SyntaxVisitor` |
+- A clear reason to exist.
+- A scope where the convention applies.
+- A diagnostic that explains the repair.
+- A passing fixture and a failing fixture.
 
-Every level uses the same parser, scopes, rule protocol, and report. Built-in
-rules and repository rules live in the same `Rules` block.
+When the design changes, revise or remove the rule. Keep the rule, its explanation,
+and its fixtures together.
 
-Read the [built-in catalog](docs/built-ins/README.md) to see every included
-piece. Read [rule authoring](docs/RULE_AUTHORING.md) to build custom facts,
-queries, visitors, and fixtures.
+People and agents read the same policy and receive the same failures. The bumpers
+keep routine changes inside the project’s chosen lanes.
 
-## Get Started
+These are syntax checks. They do not resolve compiler identity or detect every
+aliased call. Runtime tests remain necessary for behavior such as timeouts,
+process handling, and cache safety.
 
-Add the package:
+## Get started
+
+These examples use development APIs newer than `0.6.0`. The dependency below
+tracks `main` until a release includes them.
+
+Add the package to `Package.swift`:
 
 ```swift
-// Package.swift
 dependencies: [
-    .package(url: "https://github.com/RoyalPineapple/BumperBowling.git", from: "0.6.0")
+    .package(
+        url: "https://github.com/TheButtonHeist/BumperBowling.git",
+        branch: "main"
+    )
 ]
 ```
 
-Initialize and validate the repository:
+Initialize the configuration:
 
 ```bash
 swift run bumper init .
-swift run bumper lint .
 ```
 
-`bumper init` writes `BumperBowling.swift`. This file is a Swift program, like
-`Package.swift`.
+Add your rules to `BumperBowling.swift`.
 
-Bumper Bowling can analyze repositories that use older Swift language modes.
-The tool and its configuration currently require a Swift 6.2 toolchain.
-
-## Put The Bumpers In CI
-
-Your team declares the lanes. A developer or agent takes the shot. CI catches
-a wild change and points it back toward the declared architecture.
+Run the rules:
 
 ```bash
 swift run bumper lint .
 ```
 
-Use a baseline to adopt rules without stopping current work:
+`BumperBowling.swift` is a Swift program, like `Package.swift`. Repository rule
+sources can live in `.bumper/Sources`, with fixtures in `.bumper/Tests`.
+
+The tool requires macOS 15 or later and Swift 6.2 or later. It can analyze source
+that uses older Swift language modes.
+
+## Put the bumpers in CI
+
+Run the repository’s rule fixtures and source checks:
+
+```bash
+swift run bumper test .
+swift run bumper lint .
+```
+
+`RuleTestHarness` evaluates rules against arrays of `SourceInput`. The
+`BumperBowlingTestSupport` library supplies `ViolationMatcher` for diagnostic
+assertions. The [authoring guide](docs/RULE_AUTHORING.md) shows the fixture pattern.
+
+To adopt rules while existing violations remain, create a baseline:
 
 ```bash
 swift run bumper baseline create . --output .bumper-baseline.json
 swift run bumper lint . --baseline .bumper-baseline.json --fail-on error
 ```
 
-Use focused fixtures for repository rules:
-
-```bash
-swift run bumper test .
-```
-
-Agents read the same architecture before editing and validate it afterward.
-When the architecture changes, an agent can update the rule and its fixtures
-with the source change.
-
 The included [`compose-bumper-rules` skill](skills/compose-bumper-rules/SKILL.md)
-guides that workflow.
+guides agents through rule selection, composition, and fixtures.
 
 ## Commands
 
 ```text
 bumper init [root]             Write a starter configuration.
-bumper lint [root]             Validate the repository.
-bumper test [root]             Run repository-owned rule tests.
-bumper scan [root]             Show the observed architecture graph.
+bumper lint [root]             Check the repository.
+bumper test [root]             Run repository rule tests.
+bumper scan [root]             Show source inventory and dependencies.
 bumper baseline create [root]  Write a JSON baseline.
-bumper snapshot [root]         Render the declared architecture.
-bumper config [root]           Validate configuration loading.
+bumper snapshot [root]         Show the declared architecture.
+bumper config [root]           Check configuration loading.
 bumper explain <path>          Show facts for one file.
 ```
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Configuration language](docs/DSL_SPEC.md)
-- [Built-in catalog](docs/built-ins/README.md)
+- [Rule recipes](docs/RULE_RECIPES.md)
 - [Rule authoring](docs/RULE_AUTHORING.md)
+- [Built-in catalog](docs/built-ins/README.md)
+- [Configuration language](docs/DSL_SPEC.md)
 - [Build a rule from the ground up](docs/RULE_FROM_THE_GROUND_UP.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [SwiftSyntax surface](docs/SWIFTSYNTAX_SURFACE.md)
 
 ## Development
