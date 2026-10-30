@@ -14,7 +14,7 @@ struct ArchitectureEvaluationProvider: FactProvider {
         let rules = try ArchitectureRules(configuration: context.configuration)
         let files = try context.facts(BuiltInFacts.sourceFiles)
         return ArchitectureEvaluationFacts(
-            graph: ArchitectureGraph(nodes: RepositoryFacts(files: files), rules: rules),
+            graph: ArchitectureGraph(nodes: RepositoryFacts(files: files, coverage: context.repository.coverage), rules: rules),
             rules: rules
         )
     }
@@ -49,6 +49,9 @@ struct BuiltInRule: RuleDefinition {
     }
 
     func evaluate(in context: RuleContext) throws -> [RuleFailure] {
+        if metadata.id == .sourceCoverage, context.repository.coverage == nil {
+            throw RuleEvaluationError.ruleFailed(.sourceCoverage, "Source inventory is missing. Use RepositoryScanner.scanInput(root:) or scan(root:) to evaluate coverage.")
+        }
         let facts = try context.facts(architectureEvaluationFacts)
         return family.flatMap { rule in
             rule.evaluate(graph: facts.graph, rules: facts.rules)
@@ -64,6 +67,7 @@ enum BuiltInRules {
             [.forbiddenImport(configuration.forbiddenImports)],
             [.componentBoundary(configuration.componentBoundary)],
             [.duplicateOwnership(configuration.duplicateOwnership)],
+            [.sourceCoverage(configuration.sourceCoverage ?? .off)],
             [.declaredDependencyCycle(configuration.declaredDependencyCycle)],
             configuration.storedPropertyRules.map(ArchitectureRule.storedProperties),
             configuration.syntaxConstructRules.map(ArchitectureRule.syntaxConstructs),

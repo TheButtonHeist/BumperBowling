@@ -43,6 +43,10 @@ public func SingleOwner(_ severity: Severity) -> RuleConfiguration {
     RuleConfiguration(duplicateOwnership: severity)
 }
 
+public func SourceCoverage(_ severity: Severity) -> RuleConfiguration {
+    RuleConfiguration(sourceCoverage: severity)
+}
+
 public func AcyclicDeclaredDependencies(_ severity: Severity) -> RuleConfiguration {
     RuleConfiguration(declaredDependencyCycle: severity)
 }

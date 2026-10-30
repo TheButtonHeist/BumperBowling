@@ -59,12 +59,12 @@ struct LintRunEngine: Sendable {
             )
 
         case .scanSources(let preparedRules):
-            let files = try await RepositoryScanner(rules: preparedRules.rules).scanSources(root: root)
-            return .scannedSources(preparedRules: preparedRules, files: files)
+            let input = try await RepositoryScanner(rules: preparedRules.rules).scanInput(root: root)
+            return .scannedSources(preparedRules: preparedRules, files: input.files, coverage: input.coverage)
 
         case .evaluateRules(let plan):
             let root = root
-            let input = RepositoryInput(architecture: plan.configuration, files: plan.files)
+            let input = RepositoryInput(architecture: plan.configuration, files: plan.files, coverage: plan.coverage)
             let configurationURL = root.appendingPathComponent(ConfigurationLoader.fileName)
             let run: EvaluationRun
             if FileManager.default.fileExists(atPath: configurationURL.path) {
@@ -97,11 +97,12 @@ struct LintRunReducer: Sendable {
                 effect: .scanSources(preparedRules)
             )
 
-        case (.scanningSources, .scannedSources(let preparedRules, let files)):
+        case (.scanningSources, .scannedSources(let preparedRules, let files, let coverage)):
             let plan = LintEvaluationPlan(
                 configuration: preparedRules.configuration,
                 rules: preparedRules.rules,
-                files: files
+                files: files,
+                coverage: coverage
             )
             return LintRunTransition(
                 state: .evaluatingRules(plan),
@@ -113,7 +114,8 @@ struct LintRunReducer: Sendable {
                 rules: plan.rules,
                 scannedFileCount: plan.files.count,
                 report: run.report,
-                telemetry: run.telemetry
+                telemetry: run.telemetry,
+                coverage: plan.coverage
             )
             return LintRunTransition(state: .reporting(result), effect: nil)
 
@@ -156,7 +158,7 @@ enum LintRunState: Sendable {
 enum LintRunEvent: Equatable, Sendable {
     case start(ArchitectureConfiguration)
     case preparedRules(LintPreparedRules)
-    case scannedSources(preparedRules: LintPreparedRules, files: [SourceInput])
+    case scannedSources(preparedRules: LintPreparedRules, files: [SourceInput], coverage: SourceCoverageSummary? = nil)
     case evaluatedRules(plan: LintEvaluationPlan, run: EvaluationRun)
     case failed(LintRunFailure)
 }
@@ -181,6 +183,7 @@ struct LintEvaluationPlan: Sendable, Equatable {
     let configuration: ArchitectureConfiguration
     let rules: ArchitectureRules
     let files: [SourceInput]
+    let coverage: SourceCoverageSummary?
 }
 
 struct LintRunFailure: Error, Sendable, Equatable {

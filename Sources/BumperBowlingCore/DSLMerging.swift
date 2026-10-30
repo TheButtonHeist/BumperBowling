@@ -11,6 +11,7 @@ extension RuleConfiguration {
             forbiddenImports: forbiddenImports + other.forbiddenImports,
             componentBoundary: other.componentBoundary.isConfigured ? other.componentBoundary : componentBoundary,
             duplicateOwnership: other.duplicateOwnership.isConfigured ? other.duplicateOwnership : duplicateOwnership,
+            sourceCoverage: other.sourceCoverage ?? sourceCoverage,
             declaredDependencyCycle: other.declaredDependencyCycle.isConfigured
                 ? other.declaredDependencyCycle
                 : declaredDependencyCycle,

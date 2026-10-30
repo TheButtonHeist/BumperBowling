@@ -46,6 +46,7 @@ public struct RuleConfiguration: Equatable, Sendable, Codable {
     public let forbiddenImports: [RuleSetting]
     public let componentBoundary: Severity
     public let duplicateOwnership: Severity
+    public let sourceCoverage: Severity?
     public let declaredDependencyCycle: Severity
     public let storedProperties: StoredPropertyRuleConfiguration
     public let storedPropertyRules: [StoredPropertyRuleConfiguration]
@@ -64,6 +65,7 @@ public struct RuleConfiguration: Equatable, Sendable, Codable {
         forbiddenImports: RuleSetting = RuleSetting(severity: .off, values: []),
         componentBoundary: Severity = .off,
         duplicateOwnership: Severity = .off,
+        sourceCoverage: Severity? = nil,
         declaredDependencyCycle: Severity = .off,
         storedProperties: StoredPropertyRuleConfiguration = StoredPropertyRuleConfiguration(),
         syntaxConstructs: SyntaxConstructRuleConfiguration = SyntaxConstructRuleConfiguration(),
@@ -82,6 +84,7 @@ public struct RuleConfiguration: Equatable, Sendable, Codable {
             forbiddenImports: forbiddenImports.isConfigured ? [forbiddenImports] : [],
             componentBoundary: componentBoundary,
             duplicateOwnership: duplicateOwnership,
+            sourceCoverage: sourceCoverage,
             declaredDependencyCycle: declaredDependencyCycle,
             storedProperties: storedProperties,
             syntaxConstructs: syntaxConstructs,
@@ -102,6 +105,7 @@ public struct RuleConfiguration: Equatable, Sendable, Codable {
         forbiddenImports: [RuleSetting],
         componentBoundary: Severity = .off,
         duplicateOwnership: Severity = .off,
+        sourceCoverage: Severity? = nil,
         declaredDependencyCycle: Severity = .off,
         storedProperties: StoredPropertyRuleConfiguration = StoredPropertyRuleConfiguration(),
         syntaxConstructs: SyntaxConstructRuleConfiguration = SyntaxConstructRuleConfiguration(),
@@ -126,6 +130,7 @@ public struct RuleConfiguration: Equatable, Sendable, Codable {
         self.forbiddenImports = forbiddenImports.filter(\.isConfigured)
         self.componentBoundary = componentBoundary
         self.duplicateOwnership = duplicateOwnership
+        self.sourceCoverage = sourceCoverage
         self.declaredDependencyCycle = declaredDependencyCycle
         self.storedPropertyRules = storedPropertyRules
         self.storedProperties = Self.combined(storedPropertyRules)
@@ -568,6 +573,7 @@ public enum ConfigurationLoader {
         Rules {
             DependencyBoundaries(.error)
             SingleOwner(.error)
+            SourceCoverage(.error)
             AcyclicDeclaredDependencies(.error)
         }
     }

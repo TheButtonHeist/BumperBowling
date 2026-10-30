@@ -16,10 +16,12 @@ public struct BumperProgressReporter: Sendable {
 
 public struct ScanReport: Equatable, Sendable, Codable {
     public let fileCount: Int
+    public let coverage: SourceCoverageSummary?
     public let components: [String]
     public let dependencies: [ScanDependency]
 
     public init(repository: RepositoryFacts) {
+        self.coverage = repository.coverage
         self.fileCount = repository.files.count
         self.components = Set(repository.files.map(\.component.rawValue)).sorted()
         self.dependencies = repository.dependencyEdges
@@ -64,6 +66,7 @@ public struct ScanDependency: Equatable, Sendable, Codable {
 public struct LintRunResult: Sendable {
     public let rules: ArchitectureRules
     public let scannedFileCount: Int
+    public let coverage: SourceCoverageSummary?
     public let report: RuleReport
     /// Per-rule and per-fact durations from the evaluation, for diagnosing
     /// slow project rules.
@@ -76,9 +79,11 @@ public struct LintRunResult: Sendable {
         scannedFileCount: Int,
         report: RuleReport,
         telemetry: EvaluationTelemetry? = nil,
-        phases: LintPhaseTimings? = nil
+        phases: LintPhaseTimings? = nil,
+        coverage: SourceCoverageSummary? = nil
     ) {
         self.rules = rules
+        self.coverage = coverage
         self.scannedFileCount = scannedFileCount
         self.report = report
         self.telemetry = telemetry
@@ -91,7 +96,8 @@ public struct LintRunResult: Sendable {
             scannedFileCount: scannedFileCount,
             report: report,
             telemetry: telemetry,
-            phases: phases
+            phases: phases,
+            coverage: coverage
         )
     }
 
@@ -103,6 +109,7 @@ public struct LintRunResult: Sendable {
         LintOutput(
             report: report,
             rules: rules,
+            coverage: coverage,
             baselineComparison: baseline.map { LintBaselineComparison(report: report, baseline: $0) }
         )
     }
@@ -152,12 +159,15 @@ public struct LintPhaseTimings: Equatable, Sendable, Codable {
 public struct LintOutput: Equatable, Sendable, Codable {
     public let violations: [LintViolationOutput]
     public let summary: LintOutputSummary
+    public let coverage: SourceCoverageSummary?
 
     public init(
         report: RuleReport,
         rules: ArchitectureRules,
+        coverage: SourceCoverageSummary? = nil,
         baselineComparison: LintBaselineComparison? = nil
     ) {
+        self.coverage = coverage
         let baseline = baselineComparison?.baseline
         self.violations = report.violations.map { violation in
             LintViolationOutput(

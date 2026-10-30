@@ -35,6 +35,7 @@ extension AssertionShape {
     static let bumperGlobal = AssertionShape {
         DependencyBoundaries(.error)
         SingleOwner(.error)
+        SourceCoverage(.error)
         AcyclicDeclaredDependencies(.error)
         NoDirectStringMatching(
             .error,

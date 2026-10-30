@@ -20,6 +20,12 @@ let bumper = BumperProject {
             Applies(.bumperEngine)
         }
 
+        Component(.tests) {
+            Owns("Sources/BumperBowlingTestSupport")
+            Modules("BumperBowlingTestSupport")
+            MayDependOn(.core)
+        }
+
         Component(.cli) {
             Owns("Sources/BumperBowling")
             Modules("BumperBowling")

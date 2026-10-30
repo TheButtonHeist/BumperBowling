@@ -6,6 +6,7 @@ enum ArchitectureRule: Sendable {
     case forbiddenImport([RuleSetting])
     case componentBoundary(Severity)
     case duplicateOwnership(Severity)
+    case sourceCoverage(Severity)
     case declaredDependencyCycle(Severity)
     case storedProperties(StoredPropertyRuleConfiguration)
     case syntaxConstructs(SyntaxConstructRuleConfiguration)
@@ -20,6 +21,8 @@ enum ArchitectureRule: Sendable {
             .forbiddenImport
         case .componentBoundary:
             .componentBoundary
+        case .sourceCoverage:
+            .sourceCoverage
         case .duplicateOwnership:
             .duplicateOwnership
         case .declaredDependencyCycle:
@@ -45,6 +48,8 @@ enum ArchitectureRule: Sendable {
             "Disallows configured imports in linted source files."
         case .componentBoundary:
             "Requires component imports to match declared dependencies."
+        case .sourceCoverage:
+            "Requires exactly one owner for each included Swift source and reports scan coverage gaps."
         case .duplicateOwnership:
             "Disallows duplicate component path and module ownership."
         case .declaredDependencyCycle:
@@ -76,6 +81,8 @@ enum ArchitectureRule: Sendable {
             }
         case .componentBoundary(let severity):
             severity
+        case .sourceCoverage(let severity):
+            severity
         case .duplicateOwnership(let severity):
             severity
         case .declaredDependencyCycle(let severity):
@@ -101,6 +108,8 @@ enum ArchitectureRule: Sendable {
             evaluateForbiddenImports(graph: graph, settings: settings)
         case .componentBoundary(let severity):
             evaluateComponentBoundaries(graph: graph, rules: rules, severity: severity)
+        case .sourceCoverage(let severity):
+            graph.coverage?.failures(severity: severity) ?? []
         case .duplicateOwnership(let severity):
             evaluateDuplicateOwnership(rules: rules, severity: severity)
         case .declaredDependencyCycle(let severity):
@@ -202,6 +211,7 @@ public struct RuleID: Hashable, RawRepresentable, Sendable, Codable, CustomStrin
 
     public static let forbiddenImport = RuleID("forbidden_import")
     public static let componentBoundary = RuleID("component_boundary")
+    public static let sourceCoverage = RuleID("source_coverage")
     public static let duplicateOwnership = RuleID("duplicate_ownership")
     public static let declaredDependencyCycle = RuleID("declared_dependency_cycle")
     public static let storedProperties = RuleID("stored_properties")
