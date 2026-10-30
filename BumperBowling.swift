@@ -35,5 +35,9 @@ let bumper = BumperProject {
 
     Rules {
         ApplyAssertions(.bumperGlobal)
+        parsingBoundary
+        processConstructionBoundary
+        processExecutionBoundary
+        immutableEngineState
     }
 }

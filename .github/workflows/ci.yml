@@ -59,6 +59,12 @@ jobs:
           # compile out of the optimized path on constrained hosts.
           BUMPER_RUNNER_BUILD_CONFIGURATION: debug
 
+      - name: Run repository policy tests
+        run: swift run bumper test .
+        env:
+          BUMPER_CACHE_DIR: ${{ github.workspace }}/.bumper-ci-cache
+          BUMPER_RUNNER_BUILD_CONFIGURATION: debug
+
       - name: Run Bumper CLI lint
         run: swift run bumper lint .
         env:
