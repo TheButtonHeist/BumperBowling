@@ -4,6 +4,13 @@ Bumper Bowling does not ship a house architecture. It ships one open rule
 engine, SwiftSyntax-observed facts, and typed composition points so each
 repository can define its own architecture vocabulary.
 
+Custom rules can inspect the full SwiftSyntax tree. `SyntaxQuery<Node>` accepts
+any SwiftSyntax node type. Queries, ordinary Swift closures, and shared facts
+can express requirements inside declarations and relationships across files.
+
+The [executable rule recipes](RULE_RECIPES.md) demonstrate these forms through
+the public test harness.
+
 Every rule — built-in or project-defined — is a `RuleDefinition` evaluated over
 one immutable `RuleContext`, producing `RuleFailure` values that become
 `RuleViolation`s in one `RuleReport`. There is no second engine, no registry,
@@ -22,8 +29,8 @@ the level above cannot:
 3. **Closure rules over typed facts** — `Rules.repository(...)` with memoized
    `FactProvider` values when the invariant is repo-specific but the facts are
    standard.
-4. **Per-file syntax rules and typed queries** — `Rules.files(...)` and
-   `SyntaxQuery` when the rule needs to inspect parsed syntax.
+4. **Syntax rules and typed queries** — `Rules.each(...)` for each typed match,
+   `Rules.files(...)` for each file, and `SyntaxQuery` for parsed syntax.
 5. **Raw `SyntaxVisitor`** — `VisitorRule` when nothing above fits. This is a
    permanent escape hatch, not a deprecation lane.
 
@@ -415,6 +422,11 @@ For syntax policies that are about how often a pattern occurs per file, use
 `Rules.assert`. It scopes the rule, evaluates a public `SyntaxPattern`, and
 reports the observed count as structured evidence. Excess matches retain their
 source location; missing matches report against the affected file.
+
+The default counting unit is `.perFile`. Use `counting: .repository` to combine
+matches across selected files. File scope and counting unit are independent.
+The [factory reference](built-ins/rule-factories.md#cardinality-rule) defines
+shortage diagnostics, empty scopes, and count validation.
 
 ```swift
 Rules.assert(

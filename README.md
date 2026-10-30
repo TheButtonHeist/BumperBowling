@@ -18,6 +18,10 @@ review, every developer or agent has to rediscover them.
 Bumper Bowling turns them into Swift rules with source-level failures. You
 define the lane. Bumper Bowling catches changes that leave it.
 
+Rules can inspect any SwiftSyntax node type and combine observations across
+files. The architecture factories provide short forms for common policies.
+Custom rules use the same evaluator, tests, and reports.
+
 Take the preview rule. The compiler knows that `CheckoutView` conforms to
 `View`, but it cannot require a preview that constructs it.
 
@@ -35,27 +39,24 @@ Write that rule in Swift:
 import BumperBowlingCore
 import SwiftSyntax
 
-let swiftUIPreviews = Rules.files(
-    "app.swiftui_preview",
+let swiftUIPreviews = Rules.each(
+    structs().inheriting("View"),
+    id: "app.swiftui_preview",
     summary: "Each SwiftUI view is constructed by at least one preview.",
     scope: .under("Sources/Features")
-) { file in
-    let views = structs().inheriting("View").matches(in: file)
-    let previews = macroExpansions().named("Preview").matches(in: file)
-
-    return views.compactMap { view in
-        let viewName = view.node.name.text
-        let hasPreview = previews.contains { preview in
-            preview.node
-                .descendants(of: FunctionCallExprSyntax.self)
-                .map(\.calleeName)
-                .contains(viewName)
-        }
-
-        return hasPreview ? nil : view.failure(
-            message: "\(viewName) needs a #Preview that constructs \(viewName)."
-        )
+) { view in
+    let previews = macroExpansions().named("Preview").matches(in: view.file)
+    let viewName = view.node.name.text
+    let hasPreview = previews.contains { preview in
+        preview.node
+            .descendants(of: FunctionCallExprSyntax.self)
+            .map(\.calleeName)
+            .contains(viewName)
     }
+
+    return hasPreview ? [] : [view.failure(
+        message: "\(viewName) needs a #Preview that constructs \(viewName)."
+    )]
 }
 ```
 
@@ -67,6 +68,11 @@ CheckoutView needs a #Preview that constructs CheckoutView. (app.swiftui_preview
 SwiftSyntax found the declarations, inheritance clause, macro, and constructor
 call. Bumper Bowling composed those observations into one scoped rule with
 source evidence.
+
+This example matches explicit `View` inheritance and constructor spellings
+inside a preview in the same file. It does not resolve compiler type identity.
+The [rule recipes](docs/RULE_RECIPES.md) also cover arbitrary syntax,
+requirements inside each type, and relationships across files.
 
 That same composition can enforce the shape of an app.
 

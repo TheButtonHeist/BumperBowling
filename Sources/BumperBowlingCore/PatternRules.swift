@@ -1,7 +1,7 @@
 import Foundation
 import SwiftSyntax
 
-/// A syntax pattern's allowed number of matches in one source file.
+/// A syntax pattern's allowed number of matches in the selected counting unit.
 public enum SyntaxCardinality: Equatable, Sendable, CustomStringConvertible {
     case none
     case atLeast(Int)
@@ -20,16 +20,39 @@ public enum SyntaxCardinality: Equatable, Sendable, CustomStringConvertible {
             "exactly \(count) matching syntax node\(count == 1 ? "" : "s")"
         }
     }
+
+    fileprivate var count: Int? {
+        switch self {
+        case .none: nil
+        case .atLeast(let count), .atMost(let count), .exactly(let count): count
+        }
+    }
+
+    fileprivate var requiresMatches: Bool {
+        switch self {
+        case .atLeast(let count), .exactly(let count): count > 0
+        case .none, .atMost: false
+        }
+    }
+}
+
+/// File selection and match counting are independent. Repository counting
+/// combines matches from every selected file.
+public enum SyntaxCounting: Equatable, Sendable {
+    case perFile
+    case repository
 }
 
 /// One mismatch between a syntax pattern's observed and expected cardinality.
 /// The match is present when a concrete node exceeds the allowed count; it is
-/// absent when the failure is an insufficient number of matches in a file.
+/// absent when there are too few matches. For a repository-wide shortage,
+/// `file` is the selected file with the first path in lexical order.
 public struct SyntaxCardinalityViolation<Node: SyntaxProtocol>: Sendable {
     public let file: SourceFileContext
     public let match: SyntaxMatch<Node>?
     public let observedCount: Int
     public let expected: SyntaxCardinality
+    public let counting: SyntaxCounting
 
     public func failure(message: String) -> RuleFailure {
         let evidence = ViolationEvidence(
@@ -45,34 +68,48 @@ public struct SyntaxCardinalityViolation<Node: SyntaxProtocol>: Sendable {
     }
 }
 
-/// A rule that asserts a syntax pattern's cardinality in every source file in
-/// scope. It reports concrete excess nodes when possible and file-level count
-/// evidence when syntax is missing.
+/// Asserts a syntax pattern's cardinality per file or across selected files.
+/// Excess matches retain their own file and source location.
 public struct CardinalityPattern<Pattern: SyntaxPattern>: RuleDefinition {
     public let metadata: RuleMetadata
     public let scope: RuleScope
     private let pattern: Pattern
     private let cardinality: SyntaxCardinality
+    private let counting: SyntaxCounting
     private let diagnostic: @Sendable (SyntaxCardinalityViolation<Pattern.Match>) -> RuleFailure
 
     public init(
         _ pattern: Pattern,
         cardinality: SyntaxCardinality,
+        counting: SyntaxCounting = .perFile,
         metadata: RuleMetadata,
         scope: RuleScope = .repository,
         diagnostic: @escaping @Sendable (SyntaxCardinalityViolation<Pattern.Match>) -> RuleFailure
     ) {
         self.pattern = pattern
         self.cardinality = cardinality
+        self.counting = counting
         self.metadata = metadata
         self.scope = scope
         self.diagnostic = diagnostic
     }
 
     public func evaluate(in context: RuleContext) throws -> [RuleFailure] {
-        context.files(in: scope).flatMap { file in
-            let matches = pattern.matches(in: file)
-            return violations(for: matches, in: file).map(diagnostic)
+        if let count = cardinality.count, count < 0 {
+            throw RuleEvaluationError.invalidSyntaxCardinality(metadata.id, count)
+        }
+        let files = context.files(in: scope).sorted { $0.path.rawValue < $1.path.rawValue }
+        guard let first = files.first else {
+            if cardinality.requiresMatches { throw RuleEvaluationError.emptyRuleScope(metadata.id) }
+            return []
+        }
+        switch counting {
+        case .perFile:
+            return files.flatMap { file in
+                violations(for: pattern.matches(in: file), in: file).map(diagnostic)
+            }
+        case .repository:
+            return violations(for: files.flatMap { pattern.matches(in: $0) }, in: first).map(diagnostic)
         }
     }
 
@@ -85,17 +122,19 @@ public struct CardinalityPattern<Pattern: SyntaxPattern>: RuleDefinition {
             file: file,
             match: nil,
             observedCount: observedCount,
-            expected: cardinality
+            expected: cardinality,
+            counting: counting
         )
 
         switch cardinality {
         case .none:
             return matches.map { match in
                 SyntaxCardinalityViolation(
-                    file: file,
+                    file: match.file,
                     match: match,
                     observedCount: observedCount,
-                    expected: cardinality
+                    expected: cardinality,
+                    counting: counting
                 )
             }
         case .atLeast(let minimum):
@@ -103,10 +142,11 @@ public struct CardinalityPattern<Pattern: SyntaxPattern>: RuleDefinition {
         case .atMost(let maximum):
             return matches.dropFirst(maximum).map { match in
                 SyntaxCardinalityViolation(
-                    file: file,
+                    file: match.file,
                     match: match,
                     observedCount: observedCount,
-                    expected: cardinality
+                    expected: cardinality,
+                    counting: counting
                 )
             }
         case .exactly(let count):
@@ -116,10 +156,11 @@ public struct CardinalityPattern<Pattern: SyntaxPattern>: RuleDefinition {
 
             return matches.dropFirst(count).map { match in
                 SyntaxCardinalityViolation(
-                    file: file,
+                    file: match.file,
                     match: match,
                     observedCount: observedCount,
-                    expected: cardinality
+                    expected: cardinality,
+                    counting: counting
                 )
             }
         }
@@ -153,12 +194,28 @@ public struct ForbiddenPattern<Pattern: SyntaxPattern>: RuleDefinition {
 }
 
 extension Rules {
-    /// Asserts how often a syntax pattern may occur in each source file in
-    /// scope. Default diagnostics always include the observed count and the
-    /// declared cardinality; excess matches retain their source location.
+    /// Evaluates arbitrary requirements for each typed syntax match. The
+    /// closure can return multiple failures or throw an analysis error.
+    public static func each<Pattern: SyntaxPattern>(
+        _ pattern: Pattern,
+        id: String,
+        severity: Severity = .error,
+        summary: String,
+        scope: RuleScope = .repository,
+        _ evaluate: @escaping @Sendable (SyntaxMatch<Pattern.Match>) throws -> [RuleFailure]
+    ) -> SyntaxRule {
+        files(id, severity: severity, summary: summary, scope: scope) { file in
+            try pattern.matches(in: file).flatMap(evaluate)
+        }
+    }
+
+    /// Counts matches per file by default, or across selected files with
+    /// `.repository`. A positive requirement over an empty scope is an error.
+    /// Missing matches have count evidence and no invented source location.
     public static func assert<Pattern: SyntaxPattern>(
         _ pattern: Pattern,
         cardinality: SyntaxCardinality,
+        counting: SyntaxCounting = .perFile,
         id: String,
         severity: Severity = .error,
         summary: String = "Syntax pattern cardinality is constrained.",
@@ -170,6 +227,7 @@ extension Rules {
         CardinalityPattern(
             pattern,
             cardinality: cardinality,
+            counting: counting,
             metadata: RuleMetadata(id: RuleID(id), severity: severity, summary: summary),
             scope: scope
         ) { violation in

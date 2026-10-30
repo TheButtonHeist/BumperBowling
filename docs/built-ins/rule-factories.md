@@ -8,7 +8,8 @@ These factories turn repository code into `RuleDefinition` values.
 | --- | --- |
 | `Rules.repository` | Runs once with a `RuleContext`. |
 | `Rules.files` | Runs once for each parsed file in scope. |
-| `Rules.assert` | Applies a per-file cardinality to a `SyntaxPattern`. |
+| `Rules.each` | Runs once for each typed syntax match in scope. |
+| `Rules.assert` | Counts matches per file or across the selected repository files. |
 | `Rules.forbid` | Reports every match from a `SyntaxPattern`. |
 | `Rules.visitor` | Runs a raw `SyntaxVisitor` and collects its failures. |
 
@@ -44,6 +45,18 @@ Rules.files(
 }
 ```
 
+## Match Rule
+
+`Rules.each` accepts any public `SyntaxPattern`, including `SyntaxQuery<Node>`
+for any SwiftSyntax node type. Its closure receives the existing
+`SyntaxMatch<Node>` and returns zero or more failures. A thrown error aborts
+analysis through the existing evaluator.
+
+The [feature recipe](../RULE_RECIPES.md#requirements-inside-each-type) uses this
+factory to inspect direct members of each selected declaration.
+
+`Rules.each` evaluates existing matches. Use `Rules.assert` to require a match.
+
 ## Cardinality Rule
 
 ```swift
@@ -57,7 +70,35 @@ Rules.assert(
 ```
 
 Available cardinalities are `.none`, `.atLeast(_)`, `.atMost(_)`, and
-`.exactly(_)`.
+`.exactly(_)`. Counts must be nonnegative.
+
+The default `counting: .perFile` preserves independent counts for each file.
+The `scope` parameter selects files. It does not change the counting unit.
+
+```swift
+Rules.assert(
+    structs().filter { $0.node.name.text == "AppEnvironment" },
+    cardinality: .exactly(1),
+    counting: .repository,
+    id: "app.one_environment",
+    summary: "The selected files declare one AppEnvironment.",
+    scope: .under("Sources/App")
+)
+```
+
+Repository counting combines matches from all selected files. Files use
+lexical path order, and each pattern retains its match order within a file.
+Excess matches retain their own paths and locations.
+
+A shortage has count evidence and no source location. With repository
+counting, its report path is the first selected file in lexical path order.
+This file anchors the report. It is not necessarily the repair location.
+Custom messages can inspect `violation.counting`.
+
+A positive requirement over an empty file scope throws
+`RuleEvaluationError.emptyRuleScope`. This applies to both counting modes.
+Zero requirements permit an empty scope. Negative counts throw
+`RuleEvaluationError.invalidSyntaxCardinality`.
 
 ## Forbidden Pattern
 

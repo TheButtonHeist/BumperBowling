@@ -263,6 +263,8 @@ public enum RuleEvaluationError: Error, Equatable, Sendable, CustomStringConvert
     case missingSource(RelativeFilePath)
     case missingConfiguredOwner(RuleID, String)
     case duplicateRuleID(RuleID)
+    case emptyRuleScope(RuleID)
+    case invalidSyntaxCardinality(RuleID, Int)
 
     public var description: String {
         switch self {
@@ -274,6 +276,10 @@ public enum RuleEvaluationError: Error, Equatable, Sendable, CustomStringConvert
             "Rule \(id.rawValue) requires configured owner files under \(owner), but none exist."
         case .duplicateRuleID(let id):
             "Rule ID \(id.rawValue) is declared more than once; rule IDs must be unique."
+        case .emptyRuleScope(let id):
+            "Rule \(id.rawValue) requires syntax matches, but its scope selects no files."
+        case .invalidSyntaxCardinality(let id, let count):
+            "Rule \(id.rawValue) has a negative syntax cardinality (\(count)); counts must be nonnegative."
         }
     }
 }
