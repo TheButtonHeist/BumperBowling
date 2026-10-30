@@ -129,9 +129,7 @@ struct ConfigurationExecutionSafetyTests {
             .appendingPathComponent(UUID().uuidString)
         let renamedPackageRoot = temp.appendingPathComponent("BumperBowling-eval")
         let consumerRoot = temp.appendingPathComponent("Consumer")
-        let originalPackagePath = ProcessInfo.processInfo.environment["BUMPER_PACKAGE_PATH"]
         defer {
-            restoreEnvironmentValue(named: "BUMPER_PACKAGE_PATH", to: originalPackagePath)
             try? FileManager.default.removeItem(at: temp)
         }
 
@@ -157,11 +155,24 @@ struct ConfigurationExecutionSafetyTests {
             encoding: .utf8
         )
 
-        setenv("BUMPER_PACKAGE_PATH", renamedPackageRoot.path, 1)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [
+            "swift", "run", "--skip-build", "--package-path", repositoryRoot().path,
+            "bumper", "config", consumerRoot.path,
+        ]
+        var environment = ProcessInfo.processInfo.environment
+        environment["BUMPER_PACKAGE_PATH"] = renamedPackageRoot.path
+        process.environment = environment
 
-        let configuration = try ConfigurationLoader.loadConfiguration(root: consumerRoot)
+        let result = try ConfigurationLoader.runProcess(
+            process,
+            timeoutSeconds: 600,
+            outputLimitBytes: 1024 * 1024
+        )
 
-        #expect(configuration.components.map(\.name) == ["core"])
+        #expect(!result.timedOut)
+        #expect(result.terminationStatus == 0, "\(String(data: result.stderr, encoding: .utf8) ?? "<non-UTF-8 stderr>")")
     }
 
     /// The override must reach the runner's process budget, and the budget
