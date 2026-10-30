@@ -140,7 +140,8 @@ Built-in providers under `BuiltInFacts`:
 | `functionCalls` | Function and initializer calls with `calls(to:)` lookup. |
 | `directRecursion` | Functions that call themselves. |
 | `recursiveCallGroups` | Strongly connected components of the locally dispatched call graph — direct and mutual recursion; calls on another receiver never form edges. |
-| `effectiveAccess` | Declared vs. effective access levels. |
+| `effectiveAccess` | Legacy nominal-only access caps. |
+| `declarationContracts` | Explicit signature types, enclosing context, and lexical access with unresolved results. |
 | `enclosingDeclarations` | Each declaration's enclosing nominal chain. |
 | `memberReferences` | Member accesses with optional base names. |
 | `componentDependencies` | Component-to-component import edges. |
@@ -196,7 +197,11 @@ enclosing-function predicates without coupling them to repository paths.
 Typed syntax views expose value-only `LexicalContext` and `TypeShape` facts.
 Type shapes describe explicit binding and typealias syntax, including
 referenced type names, the outer type spelling, function-type shape, and
-attributes. Bumper deliberately does not claim type or alias resolution.
+attributes. TypeShape itself does not resolve aliases.
+`LexicalTypeResolver(file:)` adds bounded, same-file alias lookup and lexical
+global-actor attribute facts. See [declaration contracts and lexical lookup](built-ins/facts.md#declaration-contracts-and-lexical-lookup)
+for the supported wrappers and explicit unresolved results. Compiler type
+identity and cross-file resolution remain outside this syntax layer.
 
 Capability-specific operations such as `taking(_:)`, `callingSelf()`,
 `aliasing(_:)`, `inheriting(_:)`, and `excluding(_:)` narrow matches while keeping the concrete

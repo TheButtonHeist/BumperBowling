@@ -72,8 +72,10 @@ struct SourceFactSummary: Sendable {
 public struct RepositoryFacts: Equatable, Sendable {
     public let files: [SourceFileFacts]
     public let dependencyEdges: Set<DependencyEdge>
+    public let coverage: SourceCoverageSummary?
 
-    public init(files: [SourceFileFacts]) {
+    public init(files: [SourceFileFacts], coverage: SourceCoverageSummary? = nil) {
+        self.coverage = coverage
         self.files = files
         self.dependencyEdges = Set(
             files.flatMap { file in
@@ -104,12 +106,14 @@ public enum GraphScope: Equatable, Sendable {
 }
 
 public struct ArchitectureGraph: Equatable, Sendable {
+    public let coverage: SourceCoverageSummary?
     public let sourceFiles: [SourceFileFacts]
     public let componentNodes: Set<ComponentID>
     public let moduleImportEdges: Set<DependencyEdge>
     public let componentImportEdges: Set<ComponentImportEdge>
 
     public init(nodes: RepositoryFacts, rules: ArchitectureRules) {
+        self.coverage = nodes.coverage
         self.sourceFiles = nodes.files
         self.componentNodes = Set(nodes.files.map(\.component))
         self.moduleImportEdges = nodes.dependencyEdges

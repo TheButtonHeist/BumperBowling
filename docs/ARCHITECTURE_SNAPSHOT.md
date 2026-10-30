@@ -68,6 +68,17 @@ flowchart LR
     Findings --> Report["RuleReport"]
 ```
 
+### `source_coverage`
+
+Requires exactly one owner for each included Swift source and reports scan coverage gaps.
+
+```mermaid
+flowchart LR
+    Facts["Repository facts"] --> SourceCoverage["source_coverage"]
+    SourceCoverage --> Findings["RuleViolation[]"]
+    Findings --> Report["RuleReport"]
+```
+
 ### `declared_dependency_cycle`
 
 Disallows cycles in declared component dependencies.

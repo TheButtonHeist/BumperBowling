@@ -16,10 +16,12 @@ public struct BumperProgressReporter: Sendable {
 
 public struct ScanReport: Equatable, Sendable, Codable {
     public let fileCount: Int
+    public let coverage: SourceCoverageSummary?
     public let components: [String]
     public let dependencies: [ScanDependency]
 
     public init(repository: RepositoryFacts) {
+        self.coverage = repository.coverage
         self.fileCount = repository.files.count
         self.components = Set(repository.files.map(\.component.rawValue)).sorted()
         self.dependencies = repository.dependencyEdges
@@ -64,6 +66,7 @@ public struct ScanDependency: Equatable, Sendable, Codable {
 public struct LintRunResult: Sendable {
     public let rules: ArchitectureRules
     public let scannedFileCount: Int
+    public let coverage: SourceCoverageSummary?
     public let report: RuleReport
     /// Per-rule and per-fact durations from the evaluation, for diagnosing
     /// slow project rules.
@@ -76,9 +79,11 @@ public struct LintRunResult: Sendable {
         scannedFileCount: Int,
         report: RuleReport,
         telemetry: EvaluationTelemetry? = nil,
-        phases: LintPhaseTimings? = nil
+        phases: LintPhaseTimings? = nil,
+        coverage: SourceCoverageSummary? = nil
     ) {
         self.rules = rules
+        self.coverage = coverage
         self.scannedFileCount = scannedFileCount
         self.report = report
         self.telemetry = telemetry
@@ -91,7 +96,8 @@ public struct LintRunResult: Sendable {
             scannedFileCount: scannedFileCount,
             report: report,
             telemetry: telemetry,
-            phases: phases
+            phases: phases,
+            coverage: coverage
         )
     }
 
@@ -103,6 +109,7 @@ public struct LintRunResult: Sendable {
         LintOutput(
             report: report,
             rules: rules,
+            coverage: coverage,
             baselineComparison: baseline.map { LintBaselineComparison(report: report, baseline: $0) }
         )
     }
@@ -152,18 +159,21 @@ public struct LintPhaseTimings: Equatable, Sendable, Codable {
 public struct LintOutput: Equatable, Sendable, Codable {
     public let violations: [LintViolationOutput]
     public let summary: LintOutputSummary
+    public let coverage: SourceCoverageSummary?
 
     public init(
         report: RuleReport,
         rules: ArchitectureRules,
+        coverage: SourceCoverageSummary? = nil,
         baselineComparison: LintBaselineComparison? = nil
     ) {
-        let baseline = baselineComparison?.baseline
+        self.coverage = coverage
+        let baselineIdentities = baselineComparison?.baseline.identities
         self.violations = report.violations.map { violation in
             LintViolationOutput(
                 violation: violation,
                 component: rules.component(containing: violation.path)?.id.rawValue,
-                baselineState: baseline.map { $0.contains(violation) ? .baseline : .new }
+                baselineState: baselineIdentities.map { $0.contains(LintBaselineIdentity(violation: violation)) ? .baseline : .new }
             )
         }
         self.summary = LintOutputSummary(
@@ -303,9 +313,10 @@ public struct LintBaselineComparison: Equatable, Sendable {
 
     public init(report: RuleReport, baseline: LintBaseline) {
         let currentIdentities = Set(report.violations.map { LintBaselineIdentity(violation: $0) })
+        let baselineIdentities = baseline.identities
         self.baseline = baseline
-        self.existingViolations = report.violations.filter { baseline.contains($0) }
-        self.newViolations = report.violations.filter { !baseline.contains($0) }
+        self.existingViolations = report.violations.filter { baselineIdentities.contains(LintBaselineIdentity(violation: $0)) }
+        self.newViolations = report.violations.filter { !baselineIdentities.contains(LintBaselineIdentity(violation: $0)) }
         self.resolvedViolations = baseline.violations.filter { entry in
             !currentIdentities.contains(LintBaselineIdentity(entry: entry))
         }

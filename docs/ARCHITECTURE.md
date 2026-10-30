@@ -44,7 +44,9 @@ The current SwiftSyntax node surface is documented in [SWIFTSYNTAX_SURFACE.md](S
 
 The project runner generates a small package that links `BumperBowlingCore`, compiles `BumperBowling.swift` into it, and builds it optimized (release configuration), and runs the product in a deny-default sandbox — no network, no writable paths, an empty environment. One cached executable serves two modes. `describe` prints the project's architecture configuration as JSON so the host knows what to scan. `evaluate` receives the scanned source files on stdin as Codable `RepositoryInput`, parses each file exactly once into `RepositorySyntax`, evaluates built-in and project rules in one `RuleSet`, and prints one Codable `EvaluationRun` — the canonical `RuleReport` plus per-rule and per-fact timing telemetry. Nothing else crosses back; scanning stays in the host process, never in configuration code, and rule code does not receive filesystem traversal.
 
-The build is cached against the configuration's content hash (plus the toolchain identity and the runner's own hashes), so the compile happens once per change to `BumperBowling.swift`, not once per lint. An unchanged configuration loads from the cached binary with no build. `bumper config` loads the configuration and reports whether it is valid.
+The generated package and compiled output are cached. Before each runner invocation, SwiftPM checks whether sources, resources, or dependencies need rebuilding. An unchanged package uses an incremental build check. Rule and configuration edits reuse the same generated package directory, preserving dependency build products. Cache identity depends on the project and library paths, toolchain, and build configuration; SwiftPM tracks changed inputs. `bumper config` loads the configuration and reports whether it is valid.
+
+The host uses nonblocking pipes to send sources and capture output. One monotonic time budget covers input transfer, execution, and output collection. Output limits remain enforced while the child runs.
 
 In source mode, the cached package also owns one generated `BumperRuleTests`
 target. `bumper test` fills that target from `BumperBowling.swift`,
@@ -57,7 +59,8 @@ runs that package's ordinary test targets directly, preserving package-owned
 not sandboxed configuration evaluation. It uses SwiftPM's ordinary debug test
 default and does not prebuild the optimized lint runner. Source-mode cache
 updates and test execution share an interprocess lock so concurrent invocations
-cannot replace the generated target underneath one another.
+cannot replace the generated target underneath one another. Source-mode tests use a separate generated-package cache from lint.
+Lint cache preparation, builds, and execution also share a project lock. A process-local lock prevents concurrent threads from bypassing file locks.
 
 A configuration should declare the architecture the repository wants, then lower into assertions over observed facts. Prefer `Component`, `Owns`, `MayDependOn`, `MayUse`, and scoped fact assertions over free-floating negative rules.
 

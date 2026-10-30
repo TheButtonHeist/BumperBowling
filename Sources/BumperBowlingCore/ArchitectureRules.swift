@@ -1,6 +1,7 @@
 import Foundation
 
 public struct ArchitectureRules: Equatable, Sendable {
+    let configuration: ArchitectureConfiguration
     public let includedPaths: Set<RelativePathPrefix>
     public let excludedPaths: Set<RelativePathPrefix>
     public let components: [ComponentRule]
@@ -11,6 +12,7 @@ public struct ArchitectureRules: Equatable, Sendable {
     public let ruleConfiguration: RuleConfiguration
 
     public init(configuration: ArchitectureConfiguration) throws {
+        self.configuration = configuration
         self.includedPaths = Set(try configuration.includedPaths.map { try RelativePathPrefix($0) })
         self.excludedPaths = Set(try configuration.excludedPaths.map { try RelativePathPrefix($0) })
         try Self.validateRuleConfiguration(configuration.rules)

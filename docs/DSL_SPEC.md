@@ -61,6 +61,7 @@ extension AssertionShape {
     static let global = AssertionShape {
         DependencyBoundaries(.error)
         SingleOwner(.error)
+        SourceCoverage(.error)
         AcyclicDeclaredDependencies(.error)
     }
 }
@@ -280,6 +281,7 @@ let bumper = BumperProject {
     Rules {
         DependencyBoundaries(.error)
         SingleOwner(.error)
+        SourceCoverage(.error)
         AcyclicDeclaredDependencies(.error)
     }
 }
@@ -401,3 +403,36 @@ Bumper Bowling follows a tiny version of SwiftLint's self-test pattern:
   `RuleReport` the engine and CLI produce.
 - Command tests cover `scan` and `lint`.
 - A self-lint test runs Bumper Bowling against this repository and records error-level findings.
+
+## Source coverage
+
+Add `SourceCoverage(.error)` to `Rules` to require exactly one component owner for each included Swift file.
+`SingleOwner` continues to check overlapping configured paths, including paths without files.
+
+The scanner inventories included source files before it resolves owners. Exclusions apply before inventory.
+Unowned Swift files produce findings with their paths and an instruction to add ownership or exclude the files.
+Unowned files do not enter SwiftSyntax or component-based rules.
+Ownership paths that match no included source files produce warnings, capped at the configured severity.
+Paths with only unsupported source languages produce notes, so an intentional Objective-C shim does not fail the coverage assertion.
+
+Both scan and lint JSON include a `coverage` object:
+
+- `includedFileCount`: included source files, including recognized unsupported languages.
+- `scannedFileCount`: owned Swift files passed to syntax analysis.
+- `unownedFileCount` and `unownedPaths`: included Swift files without owners.
+- `overlappingPaths`: included Swift files with multiple component owners.
+- `languages`: counts by file extension, with an explicit `isSupported` flag.
+- `scopes`: supported and unsupported file counts for each configured component path.
+
+The inventory recognizes `.swift`, `.m`, `.mm`, `.h`, `.c`, `.cc`, `.cpp`, `.cxx`, and `.hpp` files.
+Unsupported-language symlinks count in the inventory. The scanner does not read or resolve their targets.
+Swift-source symlinks remain rejected.
+Only `.swift` files receive syntax analysis. These counts do not establish build-target membership or compiler-verified language identity.
+The source-count limit includes unsupported source files. Swift byte limits include unowned Swift files.
+
+For programmatic rule evaluation, use `RepositoryScanner.scanInput(root:)` to obtain a `RepositoryInput` with coverage metadata.
+The metadata survives JSON serialization to the project runner.
+`scanSources(root:)` now throws for an unowned Swift file instead of returning a silently incomplete array.
+`scan(root:)` retains coverage in `RepositoryFacts`.
+Coverage evaluation fails explicitly when its input has no inventory.
+Existing configurations keep coverage disabled until they add the assertion. Newly generated configurations include it.

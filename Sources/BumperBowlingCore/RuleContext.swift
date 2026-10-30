@@ -6,9 +6,11 @@ import Foundation
 public struct RepositoryInput: Equatable, Sendable, Codable {
     public let architecture: ArchitectureConfiguration
     public let files: [SourceInput]
+    public let coverage: SourceCoverageSummary?
 
-    public init(architecture: ArchitectureConfiguration, files: [SourceInput]) {
+    public init(architecture: ArchitectureConfiguration, files: [SourceInput], coverage: SourceCoverageSummary? = nil) {
         self.architecture = architecture
+        self.coverage = coverage
         self.files = files
     }
 }
@@ -29,8 +31,10 @@ public struct SourceInput: Equatable, Sendable, Codable {
 /// The immutable parsed repository: every file's source parsed exactly once.
 public struct RepositorySyntax: Sendable {
     public let files: [SourceFileContext]
+    public let coverage: SourceCoverageSummary?
 
-    public init(files: [SourceFileContext]) {
+    public init(files: [SourceFileContext], coverage: SourceCoverageSummary? = nil) {
+        self.coverage = coverage
         self.files = files
     }
 
@@ -42,14 +46,15 @@ public struct RepositorySyntax: Sendable {
                     descriptor: SourceFileDescriptor(path: file.path, component: file.component),
                     source: file.source
                 )
-            }
+            },
+            coverage: input.coverage
         )
     }
 
     /// Builds the parsed repository from scanned facts. Missing source text
     /// is an explicit analysis failure, not an empty match set.
     public init(facts: RepositoryFacts) throws {
-        self.init(files: try facts.files.map(SourceFileContext.init))
+        self.init(files: try facts.files.map(SourceFileContext.init), coverage: facts.coverage)
     }
 }
 

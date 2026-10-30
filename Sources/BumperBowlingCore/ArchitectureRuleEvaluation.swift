@@ -102,7 +102,7 @@ extension ArchitectureRule {
         visited: Set<ComponentID>
     ) -> Bool {
         let dependencies = graph[current] ?? []
-        if dependencies.contains(target), !visited.isEmpty {
+        if dependencies.contains(target) {
             return true
         }
 

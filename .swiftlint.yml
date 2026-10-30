@@ -49,6 +49,7 @@ identifier_name:
     - ApplyAssertions
     - DependencyBoundaries
     - SingleOwner
+    - SourceCoverage
     - AcyclicDeclaredDependencies
     - Paths
     - Modules

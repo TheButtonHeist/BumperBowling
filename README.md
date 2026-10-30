@@ -126,6 +126,7 @@ let bumper = BumperProject {
     Rules {
         DependencyBoundaries(.error)
         SingleOwner(.error)
+        SourceCoverage(.error)
         AcyclicDeclaredDependencies(.error)
         swiftUIPreviews
 
