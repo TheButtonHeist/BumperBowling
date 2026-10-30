@@ -142,18 +142,53 @@ struct ProjectRunnerPolicyTests {
             bumperPackageRoot: packageRoot,
             environment: [:]
         )
-        try markCachedExecutable(first, secondsAfterMetadata: 1)
         let second = try ConfigurationLoader.makeCachedPackage(
             configurationURL: configurationURL,
             bumperPackageRoot: packageRoot,
             environment: [:]
         )
 
-        #expect(first.needsBuild)
-        #expect(!second.needsBuild)
         #expect(first.root.path == second.root.path)
         #expect(first.executableURL.path == second.executableURL.path)
         #expect(second.executableURL.path.hasSuffix(".build/release/BumperProjectRunner"))
+    }
+
+    @Test(arguments: ["configuration", "source", "package", "library"])
+    func ruleEditsKeepDependencyBuilds(edit: String) throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let configurationURL = root.appendingPathComponent(ConfigurationLoader.fileName)
+        try "let bumper = 1".write(to: configurationURL, atomically: true, encoding: .utf8)
+        let sourceURL = root.appendingPathComponent(".bumper/Sources/Rule.swift")
+        try FileManager.default.createDirectory(at: sourceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "struct Rule {}".write(to: sourceURL, atomically: true, encoding: .utf8)
+        if edit == "package" {
+            try "// package manifest".write(to: root.appendingPathComponent(".bumper/Package.swift"), atomically: true, encoding: .utf8)
+        }
+        let libraryRoot = root.appendingPathComponent("Library")
+        let librarySource = libraryRoot.appendingPathComponent("Sources/Library.swift")
+        try FileManager.default.createDirectory(at: librarySource.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "// manifest".write(to: libraryRoot.appendingPathComponent("Package.swift"), atomically: true, encoding: .utf8)
+        try "struct Library {}".write(to: librarySource, atomically: true, encoding: .utf8)
+        let environment = ["BUMPER_CACHE_DIR": root.appendingPathComponent("Cache").path]
+        let first = try ConfigurationLoader.makeCachedPackage(
+            configurationURL: configurationURL, bumperPackageRoot: libraryRoot, environment: environment
+        )
+        let artifact = first.root.appendingPathComponent(".build/dependency-artifact")
+        try FileManager.default.createDirectory(at: artifact.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "preserved".write(to: artifact, atomically: true, encoding: .utf8)
+        let editedURL = edit == "library" ? librarySource : (edit == "configuration" ? configurationURL : sourceURL)
+        try "// edited rule".write(to: editedURL, atomically: true, encoding: .utf8)
+        let second = try ConfigurationLoader.makeCachedPackage(
+            configurationURL: configurationURL, bumperPackageRoot: libraryRoot, environment: environment
+        )
+        #expect(first.root.standardizedFileURL.path == second.root.standardizedFileURL.path)
+        #expect(try String(contentsOf: second.root.appendingPathComponent(".build/dependency-artifact"), encoding: .utf8) == "preserved")
+        if edit == "source" {
+            let copied = second.root.appendingPathComponent("Sources/BumperProjectRunner/ConsumerSources/Rule.swift")
+            #expect(try String(contentsOf: copied, encoding: .utf8) == "// edited rule")
+        }
     }
 
     @Test
@@ -171,7 +206,6 @@ struct ProjectRunnerPolicyTests {
             bumperPackageRoot: repositoryRoot(),
             environment: [:]
         )
-        try markCachedExecutable(first, secondsAfterMetadata: 1)
         let manifestURL = first.root.appendingPathComponent("Package.swift")
         let expectedManifest = try Data(contentsOf: manifestURL)
         let sources = first.root.appendingPathComponent("Sources/BumperProjectRunner")
@@ -181,46 +215,15 @@ struct ProjectRunnerPolicyTests {
         try "corrupted".write(to: copiedConfiguration, atomically: true, encoding: .utf8)
         try "enum Stale {}".write(to: staleSource, atomically: true, encoding: .utf8)
 
-        let repaired = try ConfigurationLoader.makeCachedPackage(
+        _ = try ConfigurationLoader.makeCachedPackage(
             configurationURL: configurationURL,
             bumperPackageRoot: repositoryRoot(),
             environment: [:]
         )
 
-        #expect(repaired.needsBuild)
         #expect(try Data(contentsOf: manifestURL) == expectedManifest)
         #expect(try String(contentsOf: copiedConfiguration, encoding: .utf8) == configuration)
         #expect(!FileManager.default.fileExists(atPath: staleSource.path))
-    }
-
-    @Test func `current metadata never hides a missing or stale executable`() throws {
-        let root = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let configurationURL = root.appendingPathComponent(ConfigurationLoader.fileName)
-        try "let bumper = 1".write(to: configurationURL, atomically: true, encoding: .utf8)
-        let packageRoot = repositoryRoot()
-
-        let first = try ConfigurationLoader.makeCachedPackage(
-            configurationURL: configurationURL,
-            bumperPackageRoot: packageRoot,
-            environment: [:]
-        )
-        let missing = try ConfigurationLoader.makeCachedPackage(
-            configurationURL: configurationURL,
-            bumperPackageRoot: packageRoot,
-            environment: [:]
-        )
-        try markCachedExecutable(first, secondsAfterMetadata: -1)
-        let stale = try ConfigurationLoader.makeCachedPackage(
-            configurationURL: configurationURL,
-            bumperPackageRoot: packageRoot,
-            environment: [:]
-        )
-
-        #expect(missing.needsBuild)
-        #expect(stale.needsBuild)
     }
 
     @Test
@@ -260,29 +263,6 @@ struct ProjectRunnerPolicyTests {
             )
         }
     }
-}
-
-private func markCachedExecutable(_ package: CachedPackage, secondsAfterMetadata: TimeInterval) throws {
-    try FileManager.default.createDirectory(
-        at: package.executableURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true
-    )
-    try "#!/bin/sh\nexit 0\n".write(
-        to: package.executableURL,
-        atomically: true,
-        encoding: .utf8
-    )
-    let metadataURL = package.root.appendingPathComponent(CachedPackageMetadata.fileName)
-    let metadataDate = try metadataURL.resourceValues(
-        forKeys: [.contentModificationDateKey]
-    ).contentModificationDate ?? Date()
-    try FileManager.default.setAttributes(
-        [
-            .modificationDate: metadataDate.addingTimeInterval(secondsAfterMetadata),
-            .posixPermissions: 0o755,
-        ],
-        ofItemAtPath: package.executableURL.path
-    )
 }
 
 private func repositoryRoot() -> URL {

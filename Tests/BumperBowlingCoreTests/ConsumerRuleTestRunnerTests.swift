@@ -81,7 +81,6 @@ struct ConsumerRuleTestRunnerTests {
             bumperPackageRoot: repositoryRoot(),
             environment: environment
         )
-        try markCachedExecutableCurrent(first.package)
         let unchanged = try ConfigurationLoader.makeCachedConsumerTestPackage(
             root: root,
             bumperPackageRoot: repositoryRoot(),
@@ -103,8 +102,6 @@ struct ConsumerRuleTestRunnerTests {
         #expect(changed.testSourcesChanged)
         #expect(first.package.root.standardizedFileURL.path == unchanged.package.root.standardizedFileURL.path)
         #expect(unchanged.package.root.standardizedFileURL.path == changed.package.root.standardizedFileURL.path)
-        #expect(!unchanged.package.needsBuild)
-        #expect(!changed.package.needsBuild)
     }
 
     @Test func `source-mode test cache repairs changed bytes and stale files`() throws {
@@ -347,29 +344,6 @@ private func makePackagedConsumerRepository() throws -> URL {
         try contents.write(to: destination, atomically: true, encoding: .utf8)
     }
     return root
-}
-
-private func markCachedExecutableCurrent(_ package: CachedPackage) throws {
-    try FileManager.default.createDirectory(
-        at: package.executableURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true
-    )
-    try "#!/bin/sh\nexit 0\n".write(
-        to: package.executableURL,
-        atomically: true,
-        encoding: .utf8
-    )
-    let metadataURL = package.root.appendingPathComponent(CachedPackageMetadata.fileName)
-    let metadataDate = try metadataURL.resourceValues(
-        forKeys: [.contentModificationDateKey]
-    ).contentModificationDate ?? Date()
-    try FileManager.default.setAttributes(
-        [
-            .modificationDate: metadataDate.addingTimeInterval(1),
-            .posixPermissions: 0o755,
-        ],
-        ofItemAtPath: package.executableURL.path
-    )
 }
 
 private func testEnvironment(for root: URL) -> [String: String] {

@@ -141,9 +141,6 @@ extension ConfigurationLoader {
             configurationURL: configurationURL,
             bumperPackageRoot: bumperPackageRoot,
             buildConfiguration: buildConfiguration,
-            manifest: manifest,
-            consumerSourcesHash: consumerSourcesHash,
-            rulePackagesHash: rulePackagesHash,
             cacheRoot: configurationCacheRoot(environment: environment)
         )
         let sources = root.appendingPathComponent("Sources/\(projectRunnerProductName)")
@@ -165,11 +162,7 @@ extension ConfigurationLoader {
                 root: root,
                 executableURL: executableURL,
                 productName: projectRunnerProductName,
-                buildConfiguration: buildConfiguration,
-                needsBuild: !cachedExecutableIsCurrent(
-                    executableURL,
-                    metadataURL: root.appendingPathComponent(CachedPackageMetadata.fileName)
-                )
+                buildConfiguration: buildConfiguration
             )
         }
 
@@ -195,8 +188,7 @@ extension ConfigurationLoader {
             root: root,
             executableURL: executableURL,
             productName: projectRunnerProductName,
-            buildConfiguration: buildConfiguration,
-            needsBuild: true
+            buildConfiguration: buildConfiguration
         )
     }
 
@@ -590,23 +582,15 @@ private extension ConfigurationLoader {
         configurationURL: URL,
         bumperPackageRoot: URL,
         buildConfiguration: String,
-        manifest: String,
-        consumerSourcesHash: String,
-        rulePackagesHash: String,
         cacheRoot: URL
     ) throws -> URL {
         let key = [
-            "v4",
+            "v5",
             projectRunnerProductName,
             buildConfiguration,
             configurationURL.standardizedFileURL.path,
             bumperPackageRoot.standardizedFileURL.path,
-            try packageRootFingerprint(bumperPackageRoot),
             try swiftToolchainIdentity(),
-            sha256Hex(Data(manifest.utf8)),
-            sha256Hex(Data(runnerSource.utf8)),
-            consumerSourcesHash,
-            rulePackagesHash,
         ].joined(separator: "\n")
 
         let root = cacheRoot
@@ -885,17 +869,6 @@ private extension ConfigurationLoader {
         guard FileManager.default.isExecutableFile(atPath: package.executableURL.path) else {
             throw BumperError.configurationOutputMalformed("\(package.productName) build did not produce an executable")
         }
-    }
-
-    static func cachedExecutableIsCurrent(_ executableURL: URL, metadataURL: URL) -> Bool {
-        guard FileManager.default.isExecutableFile(atPath: executableURL.path),
-              let executableValues = try? executableURL.resourceValues(forKeys: [.contentModificationDateKey]),
-              let executableDate = executableValues.contentModificationDate,
-              let metadataValues = try? metadataURL.resourceValues(forKeys: [.contentModificationDateKey]),
-              let metadataDate = metadataValues.contentModificationDate else {
-            return false
-        }
-        return executableDate >= metadataDate
     }
 
     static func cachedPackageIsCurrent(
@@ -1194,7 +1167,6 @@ struct CachedPackage {
     let executableURL: URL
     let productName: String
     let buildConfiguration: String
-    let needsBuild: Bool
 }
 
 struct CachedConsumerTestPackage {

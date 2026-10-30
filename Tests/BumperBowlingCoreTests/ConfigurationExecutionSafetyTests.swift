@@ -156,7 +156,12 @@ struct ConfigurationExecutionSafetyTests {
         )
 
         let process = Process()
-        process.executableURL = repositoryRoot().appendingPathComponent(".build/debug/bumper")
+        #if DEBUG
+        let buildConfiguration = "debug"
+        #else
+        let buildConfiguration = "release"
+        #endif
+        process.executableURL = repositoryRoot().appendingPathComponent(".build/\(buildConfiguration)/bumper")
         process.arguments = ["config", consumerRoot.path]
         var environment = ProcessInfo.processInfo.environment
         environment["BUMPER_PACKAGE_PATH"] = renamedPackageRoot.path
