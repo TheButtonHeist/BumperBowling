@@ -7,20 +7,23 @@ are conventions to adapt, rather than defaults for every Swift project.
 | Step | Project decision | Capability |
 | --- | --- | --- |
 | 1 | Parsing belongs to adapters | One built-in boundary rule |
-| 2 | Analytics uses named payloads | An arbitrary SwiftSyntax query |
-| 3 | Each feature owns one state and one action type | Requirements and counts inside each declaration |
-| 4 | One environment declaration serves this app | A count across selected files |
+| 2 | Unchecked sendability stays in synchronization adapters | An arbitrary SwiftSyntax query |
+| 3 | Each selected value type offers both union operations | Requirements inside each declaration |
+| 4 | Count selected declarations across files | A count across selected files |
 | 5 | Each route has one registration | A shared fact and a relationship across files |
 | 6 | One subsystem owns recursive traversal | A derived call graph |
 
 The complete rule code and paired fixtures live in
 [RuleAuthoringRecipeTests.swift](../Tests/BumperBowlingTestSupportTests/RuleAuthoringRecipeTests.swift).
+The source-backed Swift examples live in
+[SwiftPracticeRecipeTests.swift](../Tests/BumperBowlingTestSupportTests/SwiftPracticeRecipeTests.swift).
+Their rationale and primary sources are in [Swift practices](SWIFT_PRACTICES.md).
 The count fixtures live in
 [PatternAuthoringTests.swift](../Tests/BumperBowlingTestSupportTests/PatternAuthoringTests.swift).
 Run them with:
 
 ```bash
-swift test --filter 'RuleAuthoringRecipeTests|PatternAuthoringTests'
+swift test --filter 'SwiftPracticeRecipeTests|RuleAuthoringRecipeTests|PatternAuthoringTests'
 ```
 
 CI runs these tests through public imports and `RuleTestHarness`. Each pair
@@ -57,109 +60,147 @@ Parser.parse is called outside its boundary. (app.parsing_boundary)
 The repair is to reuse the parsed input or move parsing into the adapter.
 The matcher recognizes explicit call spellings. It does not detect every alias.
 
+### Controllable dependencies
+
+[Point-Free's dependency examples](https://github.com/pointfreeco/swift-dependencies)
+show why clocks and other external inputs need control in tests. This example
+uses Swift's existing `Clock` protocol and adds no dependency.
+
+```swift
+let controllableClocks = Rules.constructionOwnership(
+    "ContinuousClock", allowed: .under("Sources/Dependencies"), id: "dependencies.clock"
+)
+```
+
+`clocksAreConstructedAtTheDependencyBoundary` accepts clock construction in the
+adapter and a generic function that receives a clock. Constructing one directly
+inside the library reports the call's location. Both versions compile.
+
+The repair is to pass a clock into the library function. This rule matches the
+explicit constructor spelling. It does not detect aliases, other clock types,
+`Date.now`, or every way to obtain time. It does not prove deterministic behavior.
+
 ## 2. An arbitrary syntax query
 
-This policy requires named analytics payloads instead of dictionary literals.
-No dedicated dictionary query helper is necessary.
+The [Swift concurrency guide](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/commonproblems/#Manual-Synchronization)
+explains unchecked sendability for manual synchronization. This project keeps
+those conformances in `Sources/Synchronization` for focused review.
 
 ```swift
 import BumperBowlingCore
 import SwiftSyntax
 
-let namedPayloads = Rules.forbid(
-    SyntaxQuery<DictionaryExprSyntax>(),
-    id: "analytics.named_payloads",
-    summary: "Analytics payloads use named types.",
-    scope: .under("Sources/Analytics")
+let uncheckedSendableBoundary = Rules.forbid(
+    SyntaxQuery<AttributedTypeSyntax>().filter { type in
+        ["Sendable", "Swift.Sendable"].contains(type.node.baseType.trimmedDescription)
+            && type.node.attributes.contains { $0.as(AttributeSyntax.self)?.attributeName.trimmedDescription == "unchecked" }
+    }.excluding(.under("Sources/Synchronization")),
+    id: "concurrency.unchecked_boundary",
+    summary: "Unchecked Sendable conformances belong to manually synchronized adapters."
 ) { _ in
-    "Use a named analytics payload instead of a dictionary literal."
+    "Keep manually synchronized Sendable conformances in Sources/Synchronization."
 }
 ```
 
-The passing fixture uses a named payload and permits dictionaries outside
-analytics. The failing fixture reports a dictionary literal inside analytics.
-This rule inspects literal syntax. It does not identify all dictionary values.
+`uncheckedConformancesStayAtTheSynchronizationBoundary` accepts a lock-protected
+class inside that boundary. Actors and checked `Sendable` values remain allowed
+elsewhere. Moving the same class outside the boundary produces a diagnostic on
+`@unchecked Sendable`. Qualified `Swift.Sendable` syntax also matches.
+
+The repair is to use a checked conformance when possible, or put the manually
+synchronized adapter inside its owner. Moving code does not prove thread safety.
+The rule checks written attributes and the two explicit type spellings. Aliases,
+macro output, and actual synchronization behavior remain outside this check.
 
 ## 3. Requirements inside each declaration
 
-This project defines a feature as a struct whose name ends in `Feature`.
-Each feature needs one direct struct or enum ending in `State`, and one ending
-in `Action`. Two distinct state types are valid Swift, but violate this convention.
+[Swift's naming guidance](https://www.swift.org/documentation/api-design-guidelines/#strive-for-fluent-usage)
+describes consistent mutating and nonmutating counterparts. This library makes
+one additional choice: selected structs with an explicit in-place union operation
+also provide the corresponding value-returning operation.
 
 ```swift
-let featureMembers = Rules.each(
-    structs().filter { $0.node.name.text.hasSuffix("Feature") },
-    id: "features.direct_members",
-    summary: "Each feature declares one direct state type and one direct action type."
-) { feature in
-    let names = feature.node.memberBlock.members.compactMap { member in
-        member.decl.as(StructDeclSyntax.self)?.name.text
-            ?? member.decl.as(EnumDeclSyntax.self)?.name.text
-    }
-    return ["State", "Action"].compactMap { suffix in
-        let count = names.filter { $0.hasSuffix(suffix) }.count
-        guard count != 1 else { return nil }
-        return feature.failure(
-            message: "\(feature.node.name.text) needs one direct *\(suffix) declaration; found \(count).",
+import BumperBowlingCore
+import SwiftSyntax
+
+let valueOperationPairs = Rules.each(
+    structs(), id: "api.value_operations",
+    summary: "Selected value types offer matching in-place and value-returning union operations.",
+    scope: .under("Sources/Values")
+) { value in
+    let methods = value.node.memberBlock.members.compactMap { $0.decl.as(FunctionDeclSyntax.self) }
+    return methods.compactMap { method -> RuleFailure? in
+        let parameters = method.signature.parameterClause.parameters
+        guard method.name.text == "formUnion", method.modifiers.contains(where: { $0.name.text == "mutating" }),
+              parameters.count == 1, let parameter = parameters.first, parameter.type.trimmedDescription == "Self", parameter.firstName.text == "_",
+              method.signature.returnClause == nil else { return nil }
+        let hasCopy = methods.contains { candidate in
+            let inputs = candidate.signature.parameterClause.parameters
+            return candidate.name.text == "union"
+                && !candidate.modifiers.contains { ["mutating", "static", "class"].contains($0.name.text) }
+                && inputs.count == 1 && inputs.first?.firstName.text == parameter.firstName.text
+                && inputs.first?.type.trimmedDescription == "Self"
+                && candidate.signature.returnClause?.type.trimmedDescription == "Self"
+        }
+        return hasCopy ? nil : SyntaxMatch(node: method, file: value.file).failure(
+            message: "Provide union(_:) -> Self alongside formUnion(_:).",
             evidence: ViolationEvidence(
-                observed: "\(feature.node.name.text): \(count) direct *\(suffix) declarations",
-                expectation: "one direct *State and one direct *Action declaration"
+                observed: "formUnion(_:) has no matching value-returning union(_:)",
+                expectation: "a nonmutating instance method union(_ other: Self) -> Self on the same struct"
             )
         )
     }
 }
 ```
 
-`everyFeatureHasItsOwnDirectMembers` accepts two valid features. Its failing
-fixture includes missing members, members hidden inside a nested type, and two
-state types inside one feature. It reports four failures on the owning features.
-An unrelated declaration cannot supply a missing member.
+`valueOperationsBelongToTheSameType` accepts a pair on the same struct. Its
+failing fixtures cover a missing counterpart, a nested helper, a mutating copy,
+a wrong return type, a wrong parameter type, and a static method. Each reports
+one diagnostic on the in-place method. Another type cannot supply the counterpart.
 
-The same fixtures run with declarations together and in separate files. The
-same declarations produce the same policy failures. Paths and source locations
-follow each file. The unit of this policy is a feature declaration.
+The same cases run with declarations together and in separate files. The unit
+of the policy is a struct, independent of file layout.
 
 Example diagnostic:
 
 ```text
-Sources/Features/Features.swift:3:1
-PaymentFeature needs one direct *State declaration; found 2. (features.direct_members)
+Sources/Values/Selection.swift:2:5
+Provide union(_:) -> Self alongside formUnion(_:). (api.value_operations)
 ```
 
-The repair is to place the required types directly inside their feature and
-remove the ambiguous second state type. The rule does not combine extensions or interpret macros and conditional
-compilation. It does not inspect state behavior or require that a feature
-exists. A separate `Rules.assert` can require declaration presence.
-
-This example replaces file-based model heuristics. `Rules.each` also supports a
-project's own per-model property budget or per-enum case requirement. No special
-state-machine factory is necessary for that syntax inspection.
+The repair is to declare the matching instance method on that struct. Selection
+is limited to `Sources/Values`. The rule recognizes a direct, explicitly mutating
+`formUnion(_:)` with one `Self` parameter and no return clause. Its counterpart
+must be a nonmutating instance `union(_:)` taking and returning explicit `Self`.
+It does not combine extensions, resolve aliases or generic constraints, interpret
+conditional compilation, or prove that both operations have equivalent behavior.
+Requiring both forms is this library's policy, not a requirement for all Swift types.
 
 ## 4. A repository-wide count
 
-This convention permits exactly one struct whose name ends in `Environment`
-across the selected source files.
+This counting example selects structs whose names end in `Adapter`. It compares
+per-file counts with one combined repository count. It demonstrates aggregation;
+it does not recommend one adapter for every project.
 
 ```swift
 Rules.assert(
-    structs().filter { $0.node.name.text.hasSuffix("Environment") },
+    structs().filter { $0.node.name.text.hasSuffix("Adapter") },
     cardinality: .exactly(1),
     counting: .repository,
-    id: "environments.one",
-    summary: "One environment struct per counting unit."
+    id: "adapters.one",
+    summary: "One adapter struct per counting unit."
 )
 ```
 
-`environmentCountSeparatesSelectionFromAggregation` in
+`matchCountSeparatesSelectionFromAggregation` in
 [PatternAuthoringTests.swift](../Tests/BumperBowlingTestSupportTests/PatternAuthoringTests.swift)
-demonstrates both counting modes. Repository counting accepts one environment
-and an unrelated file. It reports a second environment in another file at that
+demonstrates both counting modes. Repository counting accepts one adapter
+and an unrelated file. It reports a second adapter in another file at that
 declaration's location. Per-file counting applies the requirement independently.
 
-The repair is to consolidate environment declarations or narrow the selected
-files to the intended application. This is a naming convention, not compiler
-type identity. A project with several independent applications needs a separate
-scope for each application. Remove this rule if that convention no longer fits.
+For an actual project, choose the declaration predicate, scope, and count that
+express its requirement. Suffix matching is a naming convention, not compiler
+type identity. The mechanics do not prescribe a repository architecture.
 
 ## 5. Relationships across files
 
@@ -276,15 +317,40 @@ This recipe matches the explicit module spelling `UI`. It does not discover
 compiler build targets or infer dependencies from symbol use. Remove this rule
 if the project no longer separates UI imports by component.
 
-## The README example
+## An optional SwiftUI convention
 
-`readmePreviewRuleHasPassingAndFailingFixtures` runs the README's preview rule.
+`previewRuleHasPassingAndFailingFixtures` demonstrates a SwiftUI-specific policy.
 It accepts a preview in the view's file and ignores views outside the selected
 scope. A preview in another file does not satisfy the rule. The failing fixture
 reports the view declaration, with its rule ID, path, location, and repair message.
 
+```swift
+import BumperBowlingCore
+import SwiftSyntax
+
+let swiftUIPreviews = Rules.each(
+    structs().inheriting("View"),
+    id: "app.swiftui_preview",
+    summary: "Each feature view has a preview in the same file.",
+    scope: .under("Sources/Features")
+) { view in
+    let previews = macroExpansions().named("Preview").matches(in: view.file)
+    let viewName = view.node.name.text
+    let hasPreview = previews.contains { preview in
+        preview.node
+            .descendants(of: FunctionCallExprSyntax.self)
+            .map(\.calleeName)
+            .contains(viewName)
+    }
+    return hasPreview ? [] : [view.failure(
+        message: "\(viewName) needs a #Preview that constructs \(viewName)."
+    )]
+}
+```
+
 This example recognizes explicit inheritance and constructor names inside
-`#Preview`. It does not prove that a preview renders successfully.
+`#Preview`. It does not prove that a preview renders successfully. The project
+chooses which views need previews through the scope.
 
 ## An explicit nominal-name query
 
@@ -315,5 +381,5 @@ unique declaration. `Rules.singleDeclaration` serves that separate purpose.
 Each example has an explicit project decision, selection rule, repair, and limit.
 Use stable project-specific IDs when composing several instances of one factory.
 
-When the project changes its payload model, feature structure, route convention,
-or traversal ownership, revise or remove the corresponding rule and fixtures.
+When the project changes its API conventions, synchronization boundaries, route
+registration, or traversal ownership, revise or remove the corresponding rule and fixtures.

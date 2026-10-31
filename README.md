@@ -8,8 +8,8 @@
 
 Some decisions keep returning to code review.
 
-A feature needs its own `State` and `Action`. Live services belong in bootstrap.
-Every view needs a preview. Each route needs one registration.
+A value type needs matching in-place and value-returning operations. Tests need
+control over time. Manually synchronized types belong at a deliberate boundary.
 
 The decisions are settled. People and agents still need reminders.
 
@@ -20,40 +20,52 @@ You define the lane. The bumpers catch changes that leave it.
 
 ## One rule, one useful failure
 
-Take a familiar convention: every feature view needs a preview.
+Swift uses paired names such as `formUnion` and `union` for in-place and
+value-returning operations. This library chooses to provide both forms on its
+selected value types.
+
+This type compiles, but it supplies only the in-place operation:
 
 ```swift
-struct CheckoutView: View {
-    var body: some View {
-        CheckoutForm()
-    }
+struct Selection {
+    var elements: Set<Int> = []
+    mutating func formUnion(_ other: Self) { elements.formUnion(other.elements) }
 }
 ```
 
-The compiler accepts this view. Your project can require a preview too:
+A rule can require the corresponding method on the same struct:
 
 ```swift
 import BumperBowlingCore
 import SwiftSyntax
 
-let swiftUIPreviews = Rules.each(
-    structs().inheriting("View"),
-    id: "app.swiftui_preview",
-    summary: "Each feature view has a preview in the same file.",
-    scope: .under("Sources/Features")
-) { view in
-    let previews = macroExpansions().named("Preview").matches(in: view.file)
-    let viewName = view.node.name.text
-    let hasPreview = previews.contains { preview in
-        preview.node
-            .descendants(of: FunctionCallExprSyntax.self)
-            .map(\.calleeName)
-            .contains(viewName)
+let valueOperationPairs = Rules.each(
+    structs(), id: "api.value_operations",
+    summary: "Selected value types offer matching in-place and value-returning union operations.",
+    scope: .under("Sources/Values")
+) { value in
+    let methods = value.node.memberBlock.members.compactMap { $0.decl.as(FunctionDeclSyntax.self) }
+    return methods.compactMap { method -> RuleFailure? in
+        let parameters = method.signature.parameterClause.parameters
+        guard method.name.text == "formUnion", method.modifiers.contains(where: { $0.name.text == "mutating" }),
+              parameters.count == 1, let parameter = parameters.first, parameter.type.trimmedDescription == "Self", parameter.firstName.text == "_",
+              method.signature.returnClause == nil else { return nil }
+        let hasCopy = methods.contains { candidate in
+            let inputs = candidate.signature.parameterClause.parameters
+            return candidate.name.text == "union"
+                && !candidate.modifiers.contains { ["mutating", "static", "class"].contains($0.name.text) }
+                && inputs.count == 1 && inputs.first?.firstName.text == parameter.firstName.text
+                && inputs.first?.type.trimmedDescription == "Self"
+                && candidate.signature.returnClause?.type.trimmedDescription == "Self"
+        }
+        return hasCopy ? nil : SyntaxMatch(node: method, file: value.file).failure(
+            message: "Provide union(_:) -> Self alongside formUnion(_:).",
+            evidence: ViolationEvidence(
+                observed: "formUnion(_:) has no matching value-returning union(_:)",
+                expectation: "a nonmutating instance method union(_ other: Self) -> Self on the same struct"
+            )
+        )
     }
-
-    return hasPreview ? [] : [view.failure(
-        message: "\(viewName) needs a #Preview that constructs \(viewName)."
-    )]
 }
 ```
 
@@ -62,22 +74,23 @@ Add the rule to `BumperBowling.swift`:
 ```swift
 let bumper = BumperProject {
     Included { "Sources" }
-    Rules { swiftUIPreviews }
+    Rules { valueOperationPairs }
 }
 ```
 
 Then run `bumper lint .`:
 
 ```text
-Sources/Features/Checkout/CheckoutView.swift:1:1
-CheckoutView needs a #Preview that constructs CheckoutView. (app.swiftui_preview)
+Sources/Values/Selection.swift:3:5
+Provide union(_:) -> Self alongside formUnion(_:). (api.value_operations)
 ```
 
-The rule has a purpose, a scope, and a repair. The same result serves a developer,
-a reviewer, or an agent.
+A method in a nested helper or another type cannot satisfy this requirement.
+The passing and failing fixtures also run with types together and in separate files.
 
-This example checks explicit `View` inheritance and constructor names inside a
-`#Preview` in the same file. It does not resolve compiler type identity.
+This policy builds on [Swift's naming guidance](https://www.swift.org/documentation/api-design-guidelines/#strive-for-fluent-usage).
+Requiring both operations is the library's choice. The rule checks written
+method shapes; it does not prove equivalent behavior or combine extensions.
 
 ## The rule is yours
 
@@ -90,10 +103,10 @@ report something that does not belong.
 
 | Project convention | Expression |
 | --- | --- |
-| Each feature owns one state type and one action type | `Rules.each` over feature structs |
-| One environment declaration across selected files | `Rules.assert` with `counting: .repository` |
+| A value type offers matching in-place and value-returning operations | `Rules.each` over direct members |
+| A required declaration count across selected files | `Rules.assert` with `counting: .repository` |
 | Each route has exactly one registration across files | `Rules.repository` with shared facts |
-| A directory uses named analytics payloads | `Rules.forbid` over dictionary literal syntax |
+| Unchecked concurrency conformances stay at a deliberate boundary | `Rules.forbid` over attributed type syntax |
 | Live service construction stays in bootstrap code | `Rules.constructionOwnership` |
 | Imports obey component dependencies | The architecture DSL and `DependencyBoundaries` |
 
@@ -128,26 +141,26 @@ Architecture declarations add a vocabulary for ownership, imports, dependencies,
 and recurring component patterns:
 
 ```swift
-enum AppComponent: String, ComponentKey {
-    case domain
-    case checkout
+enum ProjectComponent: String, ComponentKey {
+    case values
+    case dependencies
 }
 
 let bumper = BumperProject {
     Included { "Sources" }
 
-    Architecture(AppComponent.self) {
-        Component(.domain) {
-            Owns("Sources/Domain")
-            Modules("Domain")
+    Architecture(ProjectComponent.self) {
+        Component(.values) {
+            Owns("Sources/Values")
+            Modules("Values")
             MayUse(.foundation)
         }
 
-        Component(.checkout) {
-            Owns("Sources/Features/Checkout")
-            Modules("CheckoutFeature")
-            MayDependOn(.domain)
-            MayUse(.foundation, .swiftUI)
+        Component(.dependencies) {
+            Owns("Sources/Dependencies")
+            Modules("Dependencies")
+            MayDependOn(.values)
+            MayUse(.foundation)
         }
     }
 
@@ -156,7 +169,7 @@ let bumper = BumperProject {
         SingleOwner(.error)
         SourceCoverage(.error)
         AcyclicDeclaredDependencies(.error)
-        swiftUIPreviews
+        valueOperationPairs
     }
 }
 ```
@@ -259,6 +272,7 @@ bumper explain <path>          Show facts for one file.
 
 ## Documentation
 
+- [Swift practices and sources](docs/SWIFT_PRACTICES.md)
 - [Rule recipes](docs/RULE_RECIPES.md)
 - [Rule authoring](docs/RULE_AUTHORING.md)
 - [Built-in catalog](docs/built-ins/README.md)

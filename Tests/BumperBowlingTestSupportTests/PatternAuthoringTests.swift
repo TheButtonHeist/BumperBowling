@@ -6,31 +6,31 @@ import Testing
 @Suite("Public pattern authoring")
 struct PatternAuthoringTests {
     @Test(arguments: [SyntaxCounting.perFile, .repository])
-    func environmentCountSeparatesSelectionFromAggregation(counting: SyntaxCounting) throws {
-        let pattern = structs().filter { $0.node.name.text.hasSuffix("Environment") }
+    func matchCountSeparatesSelectionFromAggregation(counting: SyntaxCounting) throws {
+        let pattern = structs().filter { $0.node.name.text.hasSuffix("Adapter") }
         let harness = RuleTestHarness(Rules.assert(
             pattern, cardinality: .exactly(1), counting: counting,
-            id: "environments.one", summary: "One environment struct per counting unit."
+            id: "adapters.one", summary: "One adapter struct per counting unit."
         ))
-        let first = SourceInput.swift("Sources/A.swift", component: "app", source: "struct AppEnvironment {}")
-        let second = SourceInput.swift("Sources/B.swift", component: "app", source: "struct TestEnvironment {}")
+        let first = SourceInput.swift("Sources/A.swift", component: "app", source: "struct AppAdapter {}")
+        let second = SourceInput.swift("Sources/B.swift", component: "app", source: "struct TestAdapter {}")
         let empty = SourceInput.swift("Sources/B.swift", component: "app", source: "struct B {}")
         let passing = try harness.evaluate([first, counting == .perFile ? second : empty])
         #expect(passing.violations.isEmpty)
 
         let failingFiles: [SourceInput] = counting == .perFile
-            ? [.swift("Sources/A.swift", component: "app", source: "struct AppEnvironment {}\nstruct ExtraEnvironment {}"), empty]
+            ? [.swift("Sources/A.swift", component: "app", source: "struct AppAdapter {}\nstruct ExtraAdapter {}"), empty]
             : [first, second]
         let failing = try harness.evaluate(failingFiles)
         let reversed = try harness.evaluate(Array(failingFiles.reversed()))
         #expect(failing.violations == reversed.violations)
         if counting == .perFile {
-            let defaultHarness = RuleTestHarness(Rules.assert(pattern, cardinality: .exactly(1), id: "environments.one", summary: "One environment struct per counting unit."))
+            let defaultHarness = RuleTestHarness(Rules.assert(pattern, cardinality: .exactly(1), id: "adapters.one", summary: "One adapter struct per counting unit."))
             #expect(try defaultHarness.evaluate([first, second]).violations.isEmpty)
             #expect(try defaultHarness.evaluate(failingFiles).violations == failing.violations)
             #expect(failing.violations.count == 2)
             #expect(failing.contains(ViolationMatcher(
-                id: "environments.one", path: "Sources/A.swift", location: SourcePosition(line: 2, column: 1),
+                id: "adapters.one", path: "Sources/A.swift", location: SourcePosition(line: 2, column: 1),
                 observed: .exact("2 matching syntax nodes")
             )))
             let missing = try #require(failing.violations.first { $0.path.rawValue == "Sources/B.swift" })
@@ -39,7 +39,7 @@ struct PatternAuthoringTests {
         } else {
             #expect(failing.violations.count == 1)
             #expect(failing.contains(ViolationMatcher(
-                id: "environments.one", path: "Sources/B.swift", location: SourcePosition(line: 1, column: 1),
+                id: "adapters.one", path: "Sources/B.swift", location: SourcePosition(line: 1, column: 1),
                 observed: .exact("2 matching syntax nodes"), expectation: .exact("exactly 1 matching syntax node")
             )))
         }

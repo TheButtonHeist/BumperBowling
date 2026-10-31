@@ -5,25 +5,25 @@ import Testing
 
 @Suite("Public rule authoring recipes")
 struct RuleAuthoringRecipeTests {
-    @Test func readmePreviewRuleHasPassingAndFailingFixtures() throws {
+    @Test func previewRuleHasPassingAndFailingFixtures() throws {
         let harness = RuleTestHarness(swiftUIPreviews)
         let passing = try harness.evaluate([
-            SourceInput.swift("Sources/Features/Checkout/CheckoutView.swift", source: """
-            struct CheckoutView: View {}
-            #Preview { CheckoutView() }
+            SourceInput.swift("Sources/Features/Document/DocumentView.swift", source: """
+            struct DocumentView: View {}
+            #Preview { DocumentView() }
             """),
             .swift("Sources/Other/BackgroundView.swift", source: "struct BackgroundView: View {}"),
         ])
         #expect(passing.violations.isEmpty)
         let failing = try harness.evaluate([
-            SourceInput.swift("Sources/Features/Checkout/CheckoutView.swift", source: "struct CheckoutView: View {}"),
-            .swift("Sources/Features/Checkout/Preview.swift", source: "#Preview { CheckoutView() }"),
+            SourceInput.swift("Sources/Features/Document/DocumentView.swift", source: "struct DocumentView: View {}"),
+            .swift("Sources/Features/Document/Preview.swift", source: "#Preview { DocumentView() }"),
         ])
         #expect(failing.violations.count == 1)
         #expect(failing.contains(ViolationMatcher(
-            id: "app.swiftui_preview", path: "Sources/Features/Checkout/CheckoutView.swift",
+            id: "app.swiftui_preview", path: "Sources/Features/Document/DocumentView.swift",
             location: SourcePosition(line: 1, column: 1),
-            message: .exact("CheckoutView needs a #Preview that constructs CheckoutView.")
+            message: .exact("DocumentView needs a #Preview that constructs DocumentView.")
         )))
     }
 
@@ -51,67 +51,6 @@ struct RuleAuthoringRecipeTests {
             observed: .exact("call to Parser.parse in Sources/Rules/Policy.swift"),
             expectation: .exact("calls only inside the boundary scope")
         )))
-    }
-
-    @Test func arbitrarySyntaxUsesThePublicQuery() throws {
-        let rule = Rules.forbid(
-            SyntaxQuery<DictionaryExprSyntax>(),
-            id: "analytics.named_payloads",
-            summary: "Analytics payloads use named types.",
-            scope: .under("Sources/Analytics")
-        ) { _ in "Use a named analytics payload instead of a dictionary literal." }
-        let harness = RuleTestHarness(rule)
-        let passing = try harness.evaluate([
-            SourceInput.swift("Sources/Analytics/Event.swift", source: "let payload = Event(name: \"tap\")"),
-            SourceInput.swift("Sources/Other/Lookup.swift", source: "let lookup = [\"name\": \"tap\"]"),
-        ])
-        #expect(passing.violations.isEmpty)
-
-        let failing = try harness.evaluate([
-            SourceInput.swift("Sources/Analytics/Event.swift", source: "let payload = [\"name\": \"tap\"]"),
-        ])
-        #expect(failing.violations.count == 1)
-        #expect(failing.contains(ViolationMatcher(
-            id: "analytics.named_payloads", path: "Sources/Analytics/Event.swift",
-            location: SourcePosition(line: 1, column: 15),
-            message: .exact("Use a named analytics payload instead of a dictionary literal.")
-        )))
-    }
-
-    @Test(arguments: [false, true])
-    func everyFeatureHasItsOwnDirectMembers(splitFiles: Bool) throws {
-        let harness = RuleTestHarness(featureMembers)
-        let valid = [
-            "struct CheckoutFeature { struct CheckoutState {}; enum CheckoutAction {} }",
-            "struct SearchFeature { struct State {}; enum Action {} }",
-            "struct Unrelated {}",
-        ]
-        let passingFiles: [SourceInput] = splitFiles
-            ? valid.enumerated().map { .swift("Sources/Features/Feature\($0.offset).swift", source: $0.element) }
-            : [.swift("Sources/Features/Features.swift", source: valid.joined(separator: "\n"))]
-        #expect(try harness.evaluate(passingFiles).violations.isEmpty)
-
-        let invalid = [
-            "struct CheckoutFeature { struct Nested { struct State {}; enum Action {} } }",
-            "struct SearchFeature { struct State {} }",
-            "struct PaymentFeature { struct PendingState {}; struct CompletedState {}; enum Action {} }",
-            "struct Unrelated { enum Action {} }",
-        ]
-        let failingFiles: [SourceInput] = splitFiles
-            ? invalid.enumerated().map { .swift("Sources/Features/Feature\($0.offset).swift", source: $0.element) }
-            : [.swift("Sources/Features/Features.swift", source: invalid.joined(separator: "\n"))]
-        let failing = try harness.evaluate(failingFiles)
-        #expect(failing.violations.count == 4)
-        for (index, name, suffix, count) in [(0, "CheckoutFeature", "State", 0), (0, "CheckoutFeature", "Action", 0), (1, "SearchFeature", "Action", 0), (2, "PaymentFeature", "State", 2)] {
-            let path = splitFiles ? "Sources/Features/Feature\(index).swift" : "Sources/Features/Features.swift"
-            #expect(failing.violations(matching: ViolationMatcher(
-                id: "features.direct_members", path: try RelativeFilePath(path),
-                location: SourcePosition(line: splitFiles ? 1 : index + 1, column: 1),
-                message: .exact("\(name) needs one direct *\(suffix) declaration; found \(count)."),
-                observed: .exact("\(name): \(count) direct *\(suffix) declarations"),
-                expectation: .exact("one direct *State and one direct *Action declaration")
-            )).count == 1)
-        }
     }
 
     @Test func reservedSuffixAppliesOnlyToNominalDeclarations() throws {
@@ -253,27 +192,6 @@ private let swiftUIPreviews = Rules.each(
     return hasPreview ? [] : [view.failure(
         message: "\(viewName) needs a #Preview that constructs \(viewName)."
     )]
-}
-
-private let featureMembers = Rules.each(
-    structs().filter { $0.node.name.text.hasSuffix("Feature") },
-    id: "features.direct_members",
-    summary: "Each feature declares one direct state type and one direct action type."
-) { feature in
-    let names = feature.node.memberBlock.members.compactMap { member in
-        member.decl.as(StructDeclSyntax.self)?.name.text ?? member.decl.as(EnumDeclSyntax.self)?.name.text
-    }
-    return ["State", "Action"].compactMap { suffix in
-        let count = names.filter { $0.hasSuffix(suffix) }.count
-        guard count != 1 else { return nil }
-        return feature.failure(
-            message: "\(feature.node.name.text) needs one direct *\(suffix) declaration; found \(count).",
-            evidence: ViolationEvidence(
-                observed: "\(feature.node.name.text): \(count) direct *\(suffix) declarations",
-                expectation: "one direct *State and one direct *Action declaration"
-            )
-        )
-    }
 }
 
 private struct RouteInventory: Sendable {

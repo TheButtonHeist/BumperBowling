@@ -125,7 +125,7 @@ Symbols and paths are typed values with string-literal authoring:
 
 ```swift
 Rules.canonicalTraversal(
-    root: "AccessibilityHierarchy",
+    root: "SyntaxTree",
     structuralCase: "container",
     owners: .under("Sources/Traversal")
 )
@@ -181,13 +181,13 @@ are `functions()`, `initializers()`, `variables()`, `typeAliases()`,
 ```swift
 Rules.files(
     "project.no_target_alias",
-    summary: "AccessibilityTarget has one spelling."
+    summary: "TargetQuery has one spelling."
 ) { file in
     typeAliases()
-        .aliasing(NominalSymbol("AccessibilityTarget"))
+        .aliasing(NominalSymbol("TargetQuery"))
         .matches(in: file)
         .map { match in
-            match.failure(message: "AccessibilityTarget must not be aliased.")
+            match.failure(message: "TargetQuery must not be aliased.")
         }
 }
 ```

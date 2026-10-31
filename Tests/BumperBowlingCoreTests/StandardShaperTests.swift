@@ -73,28 +73,28 @@ struct StandardShaperTests {
 
     @Test
     func declarationAndAccessShapersCoverInternalFunctionsAndSPI() throws {
-        let ownership = Rules.declarationOwnership([.suffix("Receipt")], allowed: .under("Sources/Owner"), id: "receipt_owner")
+        let ownership = Rules.declarationOwnership([.suffix("Adapter")], allowed: .under("Sources/Owner"), id: "adapter_owner")
         let publicAPI = Rules.publicAPIOwnership(allowed: .under("Sources/API"), id: "public_owner")
         let spi = Rules.spiOwnership(allowed: .under("Sources/Bridge"), id: "spi_owner")
         let report = try RuleTestHarness(RuleSet { ownership; publicAPI; spi }).evaluate(
             [
-                SourceInput.swift("Sources/Elsewhere/Leak.swift", component: "core", source: "struct ResultReceipt {}\npublic func leaked() {}\n@_spi(Bridge) func bridge() {}"),
+                SourceInput.swift("Sources/Elsewhere/Leak.swift", component: "core", source: "struct StorageAdapter {}\npublic func leaked() {}\n@_spi(Bridge) func bridge() {}"),
             ]
         )
 
-        #expect(report.violations.map(\.ruleID) == ["receipt_owner", "public_owner", "spi_owner"])
+        #expect(report.violations.map(\.ruleID) == ["adapter_owner", "public_owner", "spi_owner"])
     }
 
     @Test
     func singleDeclarationPassesForOneOwnedDeclaration() throws {
         let rule = Rules.singleDeclaration(
-            NominalSymbol("AccessibilityTarget"),
+            NominalSymbol("TargetQuery"),
             owner: RelativePathPrefix("Sources/Plans")
         )
 
         let report = try RuleTestHarness(rule).evaluate(
             [
-                SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
+                SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct TargetQuery {}"),
             ]
         )
 
@@ -104,36 +104,36 @@ struct StandardShaperTests {
     @Test
     func singleDeclarationFlagsDuplicatesAndForeignOwners() throws {
         let rule = Rules.singleDeclaration(
-            NominalSymbol("AccessibilityTarget"),
+            NominalSymbol("TargetQuery"),
             owner: RelativePathPrefix("Sources/Plans")
         )
 
         let report = try RuleTestHarness(rule).evaluate(
             [
-                SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
-                SourceInput.swift("Sources/Plans/Duplicate.swift", component: "plans", source: "struct AccessibilityTarget {}"),
-                SourceInput.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}"),
+                SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct TargetQuery {}"),
+                SourceInput.swift("Sources/Plans/Duplicate.swift", component: "plans", source: "struct TargetQuery {}"),
+                SourceInput.swift("Sources/Client/Foreign.swift", component: "client", source: "struct TargetQuery {}"),
             ]
         )
 
         #expect(report.violations.count == 2)
         #expect(report.violations.map(\.path.rawValue).sorted() == [
+            "Sources/Client/Foreign.swift",
             "Sources/Plans/Duplicate.swift",
-            "Sources/Score/Foreign.swift",
         ])
     }
 
     @Test
     func singleDeclarationMissingOwnerFilesIsConfigurationFailure() throws {
         let rule = Rules.singleDeclaration(
-            NominalSymbol("AccessibilityTarget"),
+            NominalSymbol("TargetQuery"),
             owner: RelativePathPrefix("Sources/Missing")
         )
 
         #expect(throws: RuleEvaluationError.self) {
             _ = try RuleTestHarness(rule).evaluate(
                 [
-                    SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
+                    SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct TargetQuery {}"),
                 ]
             )
         }
@@ -193,21 +193,21 @@ struct StandardShaperTests {
     @Test
     func noAlternateAliasesFlagsAliasesOutsideFacade() throws {
         let rule = Rules.noAlternateAliases(
-            NominalSymbol("AccessibilityTarget"),
+            NominalSymbol("TargetQuery"),
             allowing: .under(RelativePathPrefix("Sources/DSL"))
         )
 
         let harness = RuleTestHarness(rule)
         let passing = try harness.evaluate([
-            SourceInput.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = AccessibilityTarget"),
+            SourceInput.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = TargetQuery"),
             SourceInput.swift("Sources/Feature/Model.swift", component: "core", source: "typealias Value = OtherTarget"),
         ])
         #expect(passing.violations.isEmpty)
 
         let report = try harness.evaluate(
             [
-                SourceInput.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = AccessibilityTarget"),
-                SourceInput.swift("Sources/Feature/Alias.swift", component: "core", source: "typealias MyTarget = AccessibilityTarget"),
+                SourceInput.swift("Sources/DSL/Facade.swift", component: "core", source: "typealias Target = TargetQuery"),
+                SourceInput.swift("Sources/Feature/Alias.swift", component: "core", source: "typealias MyTarget = TargetQuery"),
             ]
         )
 
@@ -215,37 +215,37 @@ struct StandardShaperTests {
         #expect(report.contains(ViolationMatcher(
             id: "no_alternate_aliases", path: "Sources/Feature/Alias.swift",
             location: SourcePosition(line: 1, column: 1),
-            message: .exact("MyTarget aliases AccessibilityTarget."),
-            observed: .exact("typealias MyTarget = AccessibilityTarget"),
-            expectation: .exact("use AccessibilityTarget directly")
+            message: .exact("MyTarget aliases TargetQuery."),
+            observed: .exact("typealias MyTarget = TargetQuery"),
+            expectation: .exact("use TargetQuery directly")
         )))
     }
 
     @Test
     func canonicalTraversalFlagsRecursionOutsideOwners() throws {
         let recursiveSource = """
-        func walk(hierarchy: AccessibilityHierarchy) {
-            if case .container = hierarchy {
-                walk(hierarchy: hierarchy)
+        func walk(tree: SyntaxTree) {
+            if case .container = tree {
+                walk(tree: tree)
             }
         }
         """
         let rule = Rules.canonicalTraversal(
-            root: NominalSymbol("AccessibilityHierarchy"),
+            root: NominalSymbol("SyntaxTree"),
             structuralCase: EnumCaseSymbol("container"),
             owners: .under(RelativePathPrefix("Sources/Traversal")),
-            id: "canonical_hierarchy_traversal"
+            id: "canonical_tree_traversal"
         )
 
         let report = try RuleTestHarness(rule).evaluate(
             [
-                SourceInput.swift("Sources/Traversal/Owner.swift", component: "score", source: recursiveSource),
-                SourceInput.swift("Sources/Score/Invalid.swift", component: "score", source: recursiveSource),
+                SourceInput.swift("Sources/Traversal/Owner.swift", component: "client", source: recursiveSource),
+                SourceInput.swift("Sources/Client/Invalid.swift", component: "client", source: recursiveSource),
             ]
         )
 
-        #expect(report.violations.map(\.rule.id) == ["canonical_hierarchy_traversal"])
-        #expect(report.violations.map(\.path.rawValue) == ["Sources/Score/Invalid.swift"])
+        #expect(report.violations.map(\.rule.id) == ["canonical_tree_traversal"])
+        #expect(report.violations.map(\.path.rawValue) == ["Sources/Client/Invalid.swift"])
         #expect(report.violations.first?.evidence?.observed.contains(".container") == true)
     }
 
@@ -364,7 +364,7 @@ struct StandardShaperTests {
     @Test
     func canonicalTraversalFlagsMutualRecursionOutsideOwners() throws {
         let rule = Rules.canonicalTraversal(
-            root: NominalSymbol("AccessibilityHierarchy"),
+            root: NominalSymbol("SyntaxTree"),
             structuralCase: EnumCaseSymbol("container"),
             owners: .under(RelativePathPrefix("Sources/Traversal"))
         )
@@ -372,29 +372,29 @@ struct StandardShaperTests {
         let report = try RuleTestHarness(rule).evaluate(
             [
                 SourceInput.swift(
-                    "Sources/Score/Mutual.swift",
-                    component: "score",
+                    "Sources/Client/Mutual.swift",
+                    component: "client",
                     source: """
-                    func descend(hierarchy: AccessibilityHierarchy) {
-                        visit(hierarchy: hierarchy)
+                    func descend(tree: SyntaxTree) {
+                        visit(tree: tree)
                     }
 
-                    func visit(hierarchy: AccessibilityHierarchy) {
-                        if case .container = hierarchy {
-                            descend(hierarchy: hierarchy)
+                    func visit(tree: SyntaxTree) {
+                        if case .container = tree {
+                            descend(tree: tree)
                         }
                     }
                     """
                 ),
                 SourceInput.swift(
-                    "Sources/Score/OtherReceiver.swift",
-                    component: "score",
+                    "Sources/Client/OtherReceiver.swift",
+                    component: "client",
                     source: """
                     struct Renderer {
                         let walker: Walker
 
-                        func render(hierarchy: AccessibilityHierarchy) {
-                            walker.render(hierarchy: hierarchy)
+                        func render(tree: SyntaxTree) {
+                            walker.render(tree: tree)
                         }
                     }
                     """
@@ -403,8 +403,8 @@ struct StandardShaperTests {
         )
 
         #expect(report.violations.map(\.path.rawValue) == [
-            "Sources/Score/Mutual.swift",
-            "Sources/Score/Mutual.swift",
+            "Sources/Client/Mutual.swift",
+            "Sources/Client/Mutual.swift",
         ])
         #expect(Set(report.violations.compactMap { $0.message.split(separator: " ").first }) == ["descend", "visit"])
     }

@@ -110,10 +110,10 @@ rule, fact, and query interfaces. Each accepts an optional `id:` and
 Symbols and paths are `ExpressibleByStringLiteral`, so authoring stays plain:
 
 ```swift
-Rules.singleDeclaration("AccessibilityTarget", owner: "Sources/Plans")
+Rules.singleDeclaration("TargetQuery", owner: "Sources/Plans")
 
 Rules.canonicalTraversal(
-    root: "AccessibilityHierarchy",
+    root: "SyntaxTree",
     structuralCase: "container",
     owners: .under("Sources/Traversal")
 )
@@ -199,11 +199,11 @@ Typed queries compose over the parsed file and preserve node types:
 
 ```swift
 Rules.each(
-    typeAliases().aliasing("AccessibilityTarget"),
+    typeAliases().aliasing("TargetQuery"),
     id: "project.no_alternate_aliases",
-    summary: "AccessibilityTarget has one spelling."
+    summary: "TargetQuery has one spelling."
 ) { match in
-    [match.failure(message: "\(match.node.name.text) aliases AccessibilityTarget.")]
+    [match.failure(message: "\(match.node.name.text) aliases TargetQuery.")]
 }
 ```
 
@@ -287,7 +287,7 @@ let bumper = BumperProject {
 
     Rules {
         DependencyBoundaries(.error)
-        Rules.singleDeclaration("AccessibilityTarget", owner: "Sources/Core")
+        Rules.singleDeclaration("TargetQuery", owner: "Sources/Core")
         projectRules
     }
 }
@@ -395,16 +395,16 @@ import Testing
 
 @Test
 func flagsForeignDeclarations() throws {
-    let rule = Rules.singleDeclaration("AccessibilityTarget", owner: "Sources/Plans")
+    let rule = Rules.singleDeclaration("TargetQuery", owner: "Sources/Plans")
 
     let report = try RuleTestHarness(rule).evaluate(
         [
-            SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
-            SourceInput.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}"),
+            SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct TargetQuery {}"),
+            SourceInput.swift("Sources/Client/Foreign.swift", component: "client", source: "struct TargetQuery {}"),
         ]
     )
 
-    #expect(report.violations.map(\.path.rawValue) == ["Sources/Score/Foreign.swift"])
+    #expect(report.violations.map(\.path.rawValue) == ["Sources/Client/Foreign.swift"])
 }
 ```
 

@@ -43,21 +43,21 @@ struct SpecSpellingTests {
     @Test
     func harnessAndMatchersAcceptSpecSpellings() throws {
         let recursiveSource = """
-        func walk(hierarchy: AccessibilityHierarchy) {
-            if case .container = hierarchy {
-                walk(hierarchy: hierarchy)
+        func walk(tree: SyntaxTree) {
+            if case .container = tree {
+                walk(tree: tree)
             }
         }
         """
 
-        let canonicalHierarchyTraversal = Rules.canonicalTraversal(
-            root: "AccessibilityHierarchy",
+        let canonicalTreeTraversal = Rules.canonicalTraversal(
+            root: "SyntaxTree",
             structuralCase: "container",
             owners: .under("Sources/Traversal"),
-            id: "app.canonical_hierarchy"
+            id: "app.canonical_tree"
         )
 
-        let report = try RuleTestHarness(canonicalHierarchyTraversal).evaluate(
+        let report = try RuleTestHarness(canonicalTreeTraversal).evaluate(
             [
                 .init(
                     path: "Sources/Invalid.swift",
@@ -67,14 +67,14 @@ struct SpecSpellingTests {
             ]
         )
 
-        #expect(report.violations.map(\.rule.id) == ["app.canonical_hierarchy"])
+        #expect(report.violations.map(\.rule.id) == ["app.canonical_tree"])
         #expect(
             report.contains(
                 ViolationMatcher(
-                    id: "app.canonical_hierarchy",
+                    id: "app.canonical_tree",
                     path: "Sources/Invalid.swift",
                     message: .contains("recursively traverses"),
-                    observed: .contains("AccessibilityHierarchy")
+                    observed: .contains("SyntaxTree")
                 )
             )
         )

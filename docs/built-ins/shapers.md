@@ -45,7 +45,7 @@ Example finding: `unsafeHandle is referenced outside its allowed owners.`
 
 ## Declaration, Access, and Type Policies
 
-`Rules.declarationOwnership([.suffix("Receipt")], allowed: ...)` restricts
+`Rules.declarationOwnership([.suffix("Adapter")], allowed: ...)` restricts
 matching nominal declarations, functions, variables, and type aliases to one
 scope. `Rules.publicAPIOwnership(allowed:)` and `Rules.spiOwnership(allowed:)`
 restrict public/open and `@_spi` declarations respectively.
