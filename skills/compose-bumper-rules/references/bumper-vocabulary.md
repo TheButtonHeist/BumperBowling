@@ -125,7 +125,7 @@ Symbols and paths are typed values with string-literal authoring:
 
 ```swift
 Rules.canonicalTraversal(
-    root: "AccessibilityHierarchy",
+    root: "SyntaxTree",
     structuralCase: "container",
     owners: .under("Sources/Traversal")
 )
@@ -181,13 +181,13 @@ are `functions()`, `initializers()`, `variables()`, `typeAliases()`,
 ```swift
 Rules.files(
     "project.no_target_alias",
-    summary: "AccessibilityTarget has one spelling."
+    summary: "TargetQuery has one spelling."
 ) { file in
     typeAliases()
-        .aliasing(NominalSymbol("AccessibilityTarget"))
+        .aliasing(NominalSymbol("TargetQuery"))
         .matches(in: file)
         .map { match in
-            match.failure(message: "AccessibilityTarget must not be aliased.")
+            match.failure(message: "TargetQuery must not be aliased.")
         }
 }
 ```
@@ -274,3 +274,15 @@ final class ForceUnwrapVisitor: SyntaxVisitor, RuleFailureSource {
 
 `VisitorRule` is the concrete rule type returned by this factory. Raw visitors
 remain supported. The escalation gate controls when to use them.
+
+## Query Relationships
+
+Queries select typed syntax, then refine, navigate, and relate matches.
+Use `matches(within:)` for strict descendants and `members(of:)` for declarations
+in one direct member block. Use `containing(pattern)` for required descendants
+and `without(inSameFile:)` for missing companions. Both retain the original
+subject for diagnostics. Named declaration matches expose `name` directly.
+
+Use the existing `Rules.forbid`, `assert`, and `each` factories with these queries.
+Keep cross-file inventories in `DerivedFact` and repository rules. Read the
+[query catalog](../../../docs/built-ins/syntax-queries.md) for exact boundaries.

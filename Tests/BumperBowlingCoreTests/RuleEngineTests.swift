@@ -87,13 +87,13 @@ struct RuleEngineTests {
     func declarationAndMacroQueriesComposeWithProjectSpellings() throws {
         let file = SourceFileContext(
             descriptor: SourceFileDescriptor(
-                path: RelativeFilePath("Sources/Features/CheckoutView.swift"),
+                path: RelativeFilePath("Sources/Features/DocumentView.swift"),
                 component: try ComponentID("features")
             ),
             source: """
-            struct CheckoutView: View {}
-            struct CheckoutState: Equatable {}
-            #Preview("Checkout") { CheckoutView() }
+            struct DocumentView: View {}
+            struct DocumentState: Equatable {}
+            #Preview("Document") { DocumentView() }
             """
         )
 
@@ -104,7 +104,7 @@ struct RuleEngineTests {
             .named("Preview")
             .matches(in: file)
 
-        #expect(views.map { $0.node.name.text } == ["CheckoutView"])
+        #expect(views.map { $0.node.name.text } == ["DocumentView"])
         #expect(previews.count == 1)
     }
 

@@ -7,6 +7,26 @@ public protocol SyntaxPattern: Sendable {
     associatedtype Match: SyntaxProtocol
 
     func matches(in file: SourceFileContext) -> [SyntaxMatch<Match>]
+
+    func matches<Root: SyntaxProtocol>(within root: SyntaxMatch<Root>) -> [SyntaxMatch<Match>]
+}
+
+public extension SyntaxPattern {
+    /// Strict descendants of the matched node, from the same parsed source.
+    /// Custom patterns need only implement file matching.
+    func matches<Root: SyntaxProtocol>(within root: SyntaxMatch<Root>) -> [SyntaxMatch<Match>] {
+        matches(in: root.file).filter { isDescendant($0, of: root) }
+    }
+}
+
+public extension SyntaxPattern where Match: DeclSyntaxProtocol {
+    /// Declarations written directly in this member block, excluding nested types.
+    func members<Owner: DeclGroupSyntax>(of owner: SyntaxMatch<Owner>) -> [SyntaxMatch<Match>] {
+        matches(within: owner).filter { match in
+            match.node.parent?.is(MemberBlockItemSyntax.self) == true
+                && match.node.parent?.parent?.parent?.id == owner.node.memberBlock.id
+        }
+    }
 }
 
 public struct SyntaxMatch<Node: SyntaxProtocol>: Sendable {
@@ -27,6 +47,10 @@ public struct SyntaxMatch<Node: SyntaxProtocol>: Sendable {
     }
 }
 
+public extension SyntaxMatch where Node: NamedDeclSyntax {
+    var name: String { node.name.text }
+}
+
 public extension SyntaxMatch where Node == VariableDeclSyntax {
     var isMutable: Bool {
         node.bumper.isMutable
@@ -40,58 +64,83 @@ public extension SyntaxMatch where Node == VariableDeclSyntax {
 /// The generic composable query. Consumers extend it freely; Bumper does not
 /// reserve query construction to internal code.
 public struct SyntaxQuery<Node: SyntaxProtocol>: SyntaxPattern, Sendable {
-    private let extract: @Sendable (SourceFileContext) -> [SyntaxMatch<Node>]
+    private let extract: @Sendable (SourceFileContext, Syntax) -> [SyntaxMatch<Node>]
 
     public init(_ extract: @escaping @Sendable (SourceFileContext) -> [SyntaxMatch<Node>]) {
+        self.extract = { file, _ in extract(file) }
+    }
+
+    private init(extract: @escaping @Sendable (SourceFileContext, Syntax) -> [SyntaxMatch<Node>]) {
         self.extract = extract
     }
 
     /// All nodes of `Node`'s type in the file.
     public init() {
-        self.init { file in
-            file.syntax.descendants(of: Node.self).map { node in
+        self.init(extract: { file, root in
+            root.descendants(of: Node.self).map { node in
                 SyntaxMatch(node: node, file: file)
             }
-        }
+        })
     }
 
     public func matches(in file: SourceFileContext) -> [SyntaxMatch<Node>] {
-        extract(file)
+        extract(file, Syntax(file.syntax))
+    }
+
+    public func matches<Root: SyntaxProtocol>(within root: SyntaxMatch<Root>) -> [SyntaxMatch<Node>] {
+        extract(root.file, Syntax(root.node)).filter { isDescendant($0, of: root) }
     }
 
     public func filter(
         _ predicate: @escaping @Sendable (SyntaxMatch<Node>) -> Bool
     ) -> Self {
         let extract = extract
-        return Self { file in
-            extract(file).filter(predicate)
-        }
+        return Self(extract: { file, root in
+            extract(file, root).filter(predicate)
+        })
     }
 
     public func compactMap<Output: SyntaxProtocol>(
         _ transform: @escaping @Sendable (SyntaxMatch<Node>) -> Output?
     ) -> SyntaxQuery<Output> {
         let extract = extract
-        return SyntaxQuery<Output> { file in
-            extract(file).compactMap { match in
+        return SyntaxQuery<Output>(extract: { file, root in
+            extract(file, root).compactMap { match in
                 transform(match).map { output in
-                    SyntaxMatch<Output>(node: output, file: file)
+                    SyntaxMatch<Output>(node: output, file: match.file)
                 }
             }
-        }
+        })
     }
 
     public func within(_ scope: RuleScope) -> Self {
         let extract = extract
-        return Self { file in
-            scope.includes(file) ? extract(file) : []
-        }
+        return Self(extract: { file, root in
+            scope.includes(file) ? extract(file, root) : []
+        })
     }
 
     public func excluding(_ scope: RuleScope) -> Self {
         let extract = extract
-        return Self { file in
-            scope.includes(file) ? [] : extract(file)
+        return Self(extract: { file, root in
+            scope.includes(file) ? [] : extract(file, root)
+        })
+    }
+
+    /// Keeps each subject once when the related pattern matches a strict descendant.
+    public func containing<Related: SyntaxPattern>(_ related: Related) -> Self {
+        filter { !related.matches(within: $0).isEmpty }
+    }
+
+    /// Keeps subjects that lack a companion anywhere in the same parsed file.
+    public func without<Related: SyntaxPattern>(
+        inSameFile related: @escaping @Sendable (SyntaxMatch<Node>) -> Related
+    ) -> Self {
+        filter { subject in
+            !related(subject).matches(in: subject.file).contains { companion in
+                companion.file.syntax.id == subject.file.syntax.id
+                    && companion.node.root.id == subject.file.syntax.id
+            }
         }
     }
 
@@ -135,13 +184,7 @@ public func macroExpansions() -> SyntaxQuery<MacroExpansionExprSyntax> {
 }
 
 public func nominalDeclarations() -> SyntaxQuery<DeclSyntax> {
-    SyntaxQuery<DeclSyntax> { file in
-        file.syntax.descendants(of: DeclSyntax.self)
-            .filter(\.isNominalDeclaration)
-            .map { node in
-                SyntaxMatch(node: node, file: file)
-            }
-    }
+    SyntaxQuery<DeclSyntax>().filter { $0.node.isNominalDeclaration }
 }
 
 public func functionCalls() -> SyntaxQuery<FunctionCallExprSyntax> {
@@ -193,6 +236,13 @@ extension SyntaxQuery where Node == FunctionDeclSyntax {
                 StringMatcher.exact(name).matches(callee)
             }
         }
+    }
+}
+
+extension SyntaxQuery where Node == FunctionCallExprSyntax {
+    /// Exact call spelling, using the same normalization as the call inventory.
+    public func named(_ name: String) -> Self {
+        filter { !name.isEmpty && $0.node.calleeName == name }
     }
 }
 
@@ -301,6 +351,13 @@ private extension ExprSyntax {
 
         return trimmedDescription
     }
+}
+
+private func isDescendant<Child: SyntaxProtocol, Root: SyntaxProtocol>(
+    _ child: SyntaxMatch<Child>, of root: SyntaxMatch<Root>
+) -> Bool {
+    child.file.syntax.id == root.file.syntax.id
+        && child.node.ancestors.contains { $0.id == root.node.id }
 }
 
 private extension DeclSyntax {

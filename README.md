@@ -8,8 +8,8 @@
 
 Some decisions keep returning to code review.
 
-A feature needs its own `State` and `Action`. Live services belong in bootstrap.
-Every view needs a preview. Each route needs one registration.
+Every feature view needs a preview. Previews use sample data. Explicit coding keys
+cover stored fields. Live dependencies belong at the project’s boundary.
 
 The decisions are settled. People and agents still need reminders.
 
@@ -23,41 +23,31 @@ You define the lane. The bumpers catch changes that leave it.
 Take a familiar convention: every feature view needs a preview.
 
 ```swift
-struct CheckoutView: View {
-    var body: some View {
-        CheckoutForm()
-    }
+struct DocumentView: View {
+    var body: some View { Text("Document") }
 }
 ```
 
-The compiler accepts this view. Your project can require a preview too:
+This view compiles. The project can require a preview too:
 
 ```swift
 import BumperBowlingCore
-import SwiftSyntax
 
-let swiftUIPreviews = Rules.each(
-    structs().inheriting("View"),
+let swiftUIPreviews = Rules.forbid(
+    structs().inheriting("View").without(inSameFile: { view in
+        macroExpansions().named("Preview")
+            .containing(functionCalls().named(view.name))
+    }),
     id: "app.swiftui_preview",
     summary: "Each feature view has a preview in the same file.",
     scope: .under("Sources/Features")
 ) { view in
-    let previews = macroExpansions().named("Preview").matches(in: view.file)
-    let viewName = view.node.name.text
-    let hasPreview = previews.contains { preview in
-        preview.node
-            .descendants(of: FunctionCallExprSyntax.self)
-            .map(\.calleeName)
-            .contains(viewName)
-    }
-
-    return hasPreview ? [] : [view.failure(
-        message: "\(viewName) needs a #Preview that constructs \(viewName)."
-    )]
+    "\(view.name) needs a #Preview that constructs \(view.name)."
 }
 ```
 
-Add the rule to `BumperBowling.swift`:
+The query selects view structs that lack a preview containing their constructor
+call in the same file. Add the rule to `BumperBowling.swift`:
 
 ```swift
 let bumper = BumperProject {
@@ -69,15 +59,16 @@ let bumper = BumperProject {
 Then run `bumper lint .`:
 
 ```text
-Sources/Features/Checkout/CheckoutView.swift:1:1
-CheckoutView needs a #Preview that constructs CheckoutView. (app.swiftui_preview)
+Sources/Features/Document/DocumentView.swift:1:1
+DocumentView needs a #Preview that constructs DocumentView. (app.swiftui_preview)
 ```
 
-The rule has a purpose, a scope, and a repair. The same result serves a developer,
-a reviewer, or an agent.
+The failure points to the view and explains the repair. A preview for another
+view, a constructor call outside a preview, or a preview in another file cannot
+satisfy the rule.
 
-This example checks explicit `View` inheritance and constructor names inside a
-`#Preview` in the same file. It does not resolve compiler type identity.
+This example selects structs that explicitly inherit `View` and matches written
+constructor names. It does not resolve aliases or compiler type identity.
 
 ## The rule is yours
 
@@ -90,10 +81,12 @@ report something that does not belong.
 
 | Project convention | Expression |
 | --- | --- |
-| Each feature owns one state type and one action type | `Rules.each` over feature structs |
-| One environment declaration across selected files | `Rules.assert` with `counting: .repository` |
+| Each feature view has a matching preview | A same-file relationship between syntax matches |
+| Previews use sample clients | A macro query containing selected calls |
+| Explicit coding keys cover stored fields | `Rules.each` with direct-member queries |
+| A required declaration count across selected files | `Rules.assert` with `counting: .repository` |
 | Each route has exactly one registration across files | `Rules.repository` with shared facts |
-| A directory uses named analytics payloads | `Rules.forbid` over dictionary literal syntax |
+| Unchecked concurrency conformances stay at a deliberate boundary | `Rules.forbid` over attributed type syntax |
 | Live service construction stays in bootstrap code | `Rules.constructionOwnership` |
 | Imports obey component dependencies | The architecture DSL and `DependencyBoundaries` |
 
@@ -128,24 +121,24 @@ Architecture declarations add a vocabulary for ownership, imports, dependencies,
 and recurring component patterns:
 
 ```swift
-enum AppComponent: String, ComponentKey {
+enum ProjectComponent: String, ComponentKey {
     case domain
-    case checkout
+    case ui
 }
 
 let bumper = BumperProject {
     Included { "Sources" }
 
-    Architecture(AppComponent.self) {
+    Architecture(ProjectComponent.self) {
         Component(.domain) {
             Owns("Sources/Domain")
             Modules("Domain")
             MayUse(.foundation)
         }
 
-        Component(.checkout) {
-            Owns("Sources/Features/Checkout")
-            Modules("CheckoutFeature")
+        Component(.ui) {
+            Owns("Sources/Features")
+            Modules("FeatureUI")
             MayDependOn(.domain)
             MayUse(.foundation, .swiftUI)
         }
@@ -259,6 +252,7 @@ bumper explain <path>          Show facts for one file.
 
 ## Documentation
 
+- [Swift practices and sources](docs/SWIFT_PRACTICES.md)
 - [Rule recipes](docs/RULE_RECIPES.md)
 - [Rule authoring](docs/RULE_AUTHORING.md)
 - [Built-in catalog](docs/built-ins/README.md)
