@@ -1,509 +1,159 @@
-# Rule Authoring
+# Author a repository convention
 
-Bumper Bowling does not ship a house architecture. It ships one open rule
-engine, SwiftSyntax-observed facts, and typed composition points so each
-repository can define its own architecture vocabulary.
+Start with a repeated review comment and a clear repair. State which declarations
+it concerns, where it applies, and what must hold. Build that policy in Swift.
 
-Custom rules can inspect the full SwiftSyntax tree. `SyntaxQuery<Node>` accepts
-any SwiftSyntax node type. Queries, ordinary Swift closures, and shared facts
-can express requirements inside declarations and relationships across files.
+Bumper supplies queries, builders, and source locations. SwiftLintFramework owns
+execution, cached parsing, collection, disable directives, and reporting.
 
-The [executable rule recipes](RULE_RECIPES.md) demonstrate these forms through
-the public test harness.
+## Build the rule
 
-Architecture is optional. The scanner supplies all included Swift sources,
-including unowned files. Source descriptors and derived source facts use an
-optional `component`. Component dependency facts contain only owned sources.
-`SourceCoverage` can report missing or overlapping ownership separately.
+A `SyntaxRule` declares static `metadata` and a static `body: SyntaxCheck`.
+The body is a builder. The [starter](../Sources/BumperBowlingCore/Starter/Sources/BumperRules/SwiftUIPreviewRule.swift)
+selects each feature view with `Rules.forEach` and requires a matching preview.
 
-Every rule — built-in or project-defined — is a `RuleDefinition` evaluated over
-one immutable `RuleContext`, producing `RuleFailure` values that become
-`RuleViolation`s in one `RuleReport`. There is no second engine, no registry,
-and no separate diagnostic shape for project rules.
+Use these operations:
 
-The [recipe progression](RULE_RECIPES.md) starts with a built-in boundary and
-ends with a derived call graph. Each example states its purpose, fixtures,
-diagnostic, repair, and syntax limits.
+- `Rules.forEach(query, scope:)` builds checks for each typed match.
+- `Rules.require(condition, at:message:)` reports an unmet condition at a match.
+- `Rules.require(inSameFile:at:message:)` requires a companion from the same syntax tree.
+- `Rules.forbid(query, scope:)` rejects each matching occurrence.
+- `Rules.each` and `Rules.files` accept ordinary callbacks returning `[RuleFailure]`.
 
-## The Ladder
+A requirement's `at:` argument sets its diagnostic location. It does not select
+subjects or hide findings outside the rule scope.
 
-Author a rule at the highest level that expresses it, and move down only when
-the level above cannot:
+Sibling checks all execute. They can support several aspects of one convention.
+Keep unrelated conventions in separate rule types with separate identifiers.
 
-1. **Architecture DSL** — components, ownership, dependencies, capabilities,
-   and `Requires(...)` bundles inside `Architecture { ... }`. Use these when
-   the policy concerns components.
-2. **Standard shapers** — prebuilt `Rules.*` factories for common ownership and
-   traversal invariants. One call, typed arguments.
-3. **Closure rules over typed facts** — `Rules.repository(...)` with memoized
-   `FactProvider` values when the invariant is repo-specific but the facts are
-   standard.
-4. **Syntax rules and typed queries** — `Rules.each(...)` for each typed match,
-   `Rules.files(...)` for each file, and `SyntaxQuery` for parsed syntax.
-5. **Raw `SyntaxVisitor`** — `VisitorRule` when nothing above fits. This is a
-   permanent escape hatch, not a deprecation lane.
+Use local constants, conditions, optional bindings, switches, and loops inside
+the builder. Use ordinary Swift helpers for algorithms that need `guard`, early
+return, or throwing control flow. A helper can return one `SyntaxCheck`; give it
+`@CheckBuilder` if it composes several checks.
 
-Before admitting a rule, state the observed fact, scope, and mismatch. Reject
-rules for historical spellings, malformed Swift, and states the compiler
-already makes unconstructible. For a rule below the standard-shaper rung,
-explain why the next higher rung cannot express the invariant and audit an
-existing rule at that rung or lower for deletion or promotion.
+The [direct-member example](../.bumper/Sources/BumperRules/ExplicitCodingKeysRule.swift)
+uses an optional binding, sets, and nested loops. It checks explicit CodingKeys
+coverage while allowing compiler synthesis when no keys are declared.
 
-Every project rule has two explanations:
+Public rule types need public metadata and bodies. They do not need native
+configuration storage or an initializer. Bumper supplies a distinct SwiftLint
+adapter for each type.
 
-- Its explicit `summary` is the concise runtime explanation attached to a
-  violation. Do not rely on a generic factory default.
-- The consumer's rule catalog records rationale, scope, repair, proof, and the
-  condition that will let the project delete the rule.
+## Query the existing tree
 
-When one visitor shares a parse pass across several checks, catalog every
-sub-invariant. One umbrella rule ID must not hide undocumented policy.
+`SyntaxQuery<Node>` accepts any SwiftSyntax node type. It returns typed matches
+with `node` and `file`. `file.syntax` is SwiftLint's cached tree. Never reparse it.
 
-## Terms
-
-- `RuleDefinition`: one rule — identity (`RuleMetadata`), scope (`RuleScope`),
-  and an `evaluate(in:)` over `RuleContext`.
-- `RuleContext`: the immutable evaluation context: configuration, the
-  parse-once `RepositorySyntax`, and the memoized fact cache.
-- `RuleFailure`: one finding from a rule; rule metadata is attached by the
-  engine to produce a `RuleViolation`.
-- `RuleSet`: an ordered collection of rules built with a result builder.
-- `FactProvider`: a typed, memoized derivation over the parsed repository.
-- `RuleScope`: where a rule applies — `.repository`, `.under(path)`,
-  `.component(id)`, `.files(paths)`, or any predicate.
-- `ComponentShape` / `AssertionShape`: reusable bundles of component and
-  repository policy for the architecture DSL.
-
-## Composition
-
-Bumper Bowling does not define a house architecture. A repository composes its
-own vocabulary from typed values.
-
-`ComponentRequirement` groups source-fact requirements. `ComponentShape`
-groups component elements. `AssertionShape` groups repository-level rule
-configuration.
-
-`Applies(...)` inserts a shape into the current component. The component's
-owned paths set the default scope for its requirements. A shape can include
-another shape. Importing a source file or a local rule package does not apply a
-shape.
-
-Define a `RuleDefinition` with a `RuleScope` when composition cannot express a
-check. That rule uses the same engine and report format as a built-in rule.
-
-## Standard Shaper Catalog
-
-All shapers are static members of `Rules`, implemented only through the public
-rule, fact, and query interfaces. Each accepts an optional `id:` and
-`severity:`.
-
-| Shaper | Asserts |
-| --- | --- |
-| `Rules.importOwnership(_:allowed:)` | Matching module imports occur only inside the allowed scope. |
-| `Rules.memberReferenceOwnership(_:allowed:)` | Matching member-access spellings occur only inside the allowed scope; this is syntax, not property or method resolution. |
-| `Rules.singleDeclaration(_:owner:)` | Exactly one declaration of the symbol, under the owner path. A configured owner with no files is a configuration error. |
-| `Rules.constructionOwnership(_:allowed:)` | The type is constructed only inside the allowed scope. |
-| `Rules.boundaryOnly(function:allowed:)` | Calls to the function occur only inside the boundary scope. |
-| `Rules.noAlternateAliases(_:allowing:)` | No `typealias` re-exposes the symbol outside the allowing scope. |
-| `Rules.canonicalTraversal(root:structuralCase:owners:)` | Recursive traversal of the type — direct or mutual, over locally dispatched calls — stays with its owners. |
-
-Symbols and paths are `ExpressibleByStringLiteral`, so authoring stays plain:
+Common query roots include `structs()`, `functions()`, `initializers()`,
+`variables()`, `typeAliases()`, `functionCalls()`, and `macroExpansions()`.
+Use a generic query for everything else:
 
 ```swift
-Rules.singleDeclaration("AccessibilityTarget", owner: "Sources/Plans")
-
-Rules.canonicalTraversal(
-    root: "AccessibilityHierarchy",
-    structuralCase: "container",
-    owners: .under("Sources/Traversal")
-)
+SyntaxQuery<EnumDeclSyntax>().filter { $0.name == "AppRoute" }
 ```
 
-Read [Build An Architecture Rule From The Ground Up](RULE_FROM_THE_GROUND_UP.md)
-for a walkthrough of this rule's syntax, facts, composition, and use.
+Queries compose with `filter`, `compactMap`, `containing`, `without(inSameFile:)`,
+`within`, and `excluding`. A custom `SyntaxPattern` can supply its own matches.
 
-## Closure Rules Over Typed Facts
+`matches(within:)` selects strict descendants. `members(of:)` selects direct
+members and excludes declarations in nested types. Same-file requirements check
+both the file tree and the matched node's tree, including custom query results.
 
-`Rules.repository(_:severity:summary:_:)` evaluates once over the whole repository.
-Request facts through `context.facts(_:)`; providers are derived once per run
-and memoized:
+Use `variable.isMutable`, `variable.bindingNames`, and
+`variable.storedBindingNames` for common binding questions.
+`variables().storedMembers()` excludes globals, locals, and computed properties.
+Property observers count as stored bindings.
+
+For custom logic, inspect `match.node` or walk `file.syntax` with a
+`SyntaxVisitor`. Return `match.failure(message:)` or
+`file.failure(at:message:)` to retain the source location. The context also
+provides the repository-relative `path`, canonical repository `root`, original
+`source`, and location converter.
+
+## Select subjects separately from collection
+
+Scopes use repository-relative paths:
 
 ```swift
-Rules.repository(
-    "project.no_uikit",
-    severity: .error,
-    summary: "UIKit imports stay at the application boundary."
-) { context in
-    try context.facts(BuiltInFacts.imports).occurrences
-        .filter { $0.module.rawValue == "UIKit" }
-        .map { RuleFailure(path: $0.path, message: "UIKit is not allowed here.") }
+.under("Sources/Features")
+.files(["Sources/App/Routes.swift"])
+RuleScope.repository.excluding(.under("Sources/Generated"))
+```
+
+A custom scope can inspect `SourceFileContext`. `.under` matches path components,
+so `Sources/FeatureTests` does not fall under `Sources/Features`.
+
+Put subject scope on the outer selection. Paths in that check structure are
+validated before execution even when nothing matches. A per-match callback does
+not run, or contribute scope declarations, for an absent match.
+
+A `RepositoryRule` declares typed `FileInfo` and a static
+`body: RepositoryCheck<FileInfo>`. Its `Rules.repository` collection closure is
+ordinary Swift. Its validation closure is a check builder, so it can loop over
+collected subjects and emit requirements.
+
+Collection includes every scanned file. Scope selects the files to check and
+the locations the rule can report. SwiftLint completes collection before
+validation. Evidence from another directory can satisfy a scoped subject.
+
+A repository rule with no selected subject fails before validation. A DSL
+finding outside the rule's subject scope also fails. Neither becomes a passing
+lint result. Composed file checks bound that rule scope by their union.
+
+See the [route example](../.bumper/Sources/BumperRules/RouteRegistrationsRule.swift).
+It uses ordinary counts to require exactly one registration for each route.
+There is no shared fact engine.
+
+## Register and share rules
+
+```swift
+BumperProject(included: ["Sources"], excluded: ["Sources/Generated"]) {
+    SwiftUIPreviewRule.self
+    ExplicitCodingKeysRule.self
+    RouteRegistrationsRule.self
+}.main()
+```
+
+The project builder supports conditions, loops, and native SwiftLint rule types.
+Duplicate identifiers fail. One rule type has one stable identifier. Bumper does
+not synthesize runtime types for closure instances with different IDs.
+
+To share conventions, export public rule types from a named Swift package.
+Add that library as a dependency of another repository's runner and tests.
+Register only the selected types. Use a distinct module name if that repository
+also has local rules. Typed instance options are not part of this API.
+
+## Preserve the meaning with examples
+
+Use `RuleTestHarness(MyRule.self)` from `BumperBowlingTestSupport`. A harness can
+also use the project builder syntax to register several authored or native rules:
+
+```swift
+let harness = RuleTestHarness {
+    SwiftUIPreviewRule.self
+    ExplicitCodingKeysRule.self
 }
 ```
 
-Built-in providers under `BuiltInFacts`:
-
-| Provider | Fact |
-| --- | --- |
-| `sourceFiles` | Projected per-file facts (imports, declarations, stored properties, constructs). |
-| `imports` | Every import occurrence with module, path, and component. |
-| `declarations` | Nominal declaration inventory with `occurrences(of:)` lookup. |
-| `nominalTypes` | Typed nominal declarations with kind, access, inheritance, and location. |
-| `extensions` | Extension declarations. |
-| `storedProperties` | Stored properties with explicit types and mutability. |
-| `syntaxNodes` | The observed syntax-node catalog. |
-| `functionCalls` | Function and initializer calls with `calls(to:)` lookup. |
-| `directRecursion` | Functions that call themselves. |
-| `recursiveCallGroups` | Strongly connected components of the locally dispatched call graph — direct and mutual recursion; calls on another receiver never form edges. |
-| `effectiveAccess` | Legacy nominal-only access caps. |
-| `declarationContracts` | Explicit signature types, enclosing context, and lexical access with unresolved results. |
-| `enclosingDeclarations` | Each declaration's enclosing nominal chain. |
-| `memberReferences` | Member accesses with optional base names. |
-| `componentDependencies` | Component-to-component import edges. |
-
-With `scope:`, a repository closure takes `{ subjects, context in ... }`.
-Subjects are the selected source files. Context and shared facts still cover
-the full input. Diagnostics must anchor selected subjects. An outside diagnostic
-is an explicit evaluation error. The [factory reference](built-ins/rule-factories.md#repository-rule)
-defines empty scopes and diagnostic anchors.
-
-### Defining Your Own Fact Provider
-
-A provider is a value type with a stable `id` and a `derive(in:)`:
-
-```swift
-struct DeclarationsPerFile: FactProvider {
-    let id: FactProviderID = "project.declarations_per_file"
-
-    func derive(in context: FactDerivationContext) throws -> [RelativeFilePath: Int] {
-        let occurrences = try context.facts(BuiltInFacts.declarations).occurrences
-        return Dictionary(grouping: occurrences, by: \.path).mapValues(\.count)
-    }
-}
-```
-
-Providers may request other providers through `context.facts(_:)`; cycles are
-explicit errors, never deadlocks or empty results. Derivation failures fail the
-run — an analysis error is never an empty match set.
-
-A provider ID identifies its complete derivation, including parameters. Two
-providers with the same ID share the first result or error within one run.
-Different parameter values need different IDs if they produce different facts.
-The cache does not compare provider values or inspect closure captures.
-
-## Per-File Syntax Rules and Typed Queries
-
-`Rules.files(_:severity:summary:_:)` runs once per parsed file. The whole run parses
-each file exactly once; every rule shares the same trees.
-
-Typed queries compose over the parsed file and preserve node types:
-
-```swift
-Rules.each(
-    typeAliases().aliasing("AccessibilityTarget"),
-    id: "project.no_alternate_aliases",
-    summary: "AccessibilityTarget has one spelling."
-) { match in
-    [match.failure(message: "\(match.node.name.text) aliases AccessibilityTarget.")]
-}
-```
-
-Query roots: `functions()`, `initializers()`, `variables()`, `typeAliases()`,
-`structs()`, `macroExpansions()`, `nominalDeclarations()`, `functionCalls()`.
-Queries filter files with
-`within(_:)` and filter nodes with `lexically(within:)` or
-`lexically(excluding:)`. `SyntaxScope`
-composes file, type-member, local, protocol, enclosing-type, and
-enclosing-function predicates without coupling them to repository paths.
-
-Common match facts use direct access: `match.lexicalContext`,
-`variable.isMutable`, and `variable.bindingNames`. For stored member
-declarations, use `variables().storedMembers()`. Query predicates can use
-key paths, such as `.filter(\.isMutable)`.
-
-These conveniences reuse the existing syntax facts. `match.node` retains full
-SwiftSyntax access. The [query reference](built-ins/syntax-queries.md#match-context-and-facts)
-defines the selection rules and includes a complete example.
-
-Typed syntax views expose value-only `LexicalContext` and `TypeShape` facts.
-Type shapes describe explicit binding and typealias syntax, including
-referenced type names, the outer type spelling, function-type shape, and
-attributes. TypeShape itself does not resolve aliases.
-`LexicalTypeResolver(file:)` adds bounded, same-file alias lookup and lexical
-global-actor attribute facts. See [declaration contracts and lexical lookup](built-ins/facts.md#declaration-contracts-and-lexical-lookup)
-for the supported wrappers and explicit unresolved results. Compiler type
-identity and cross-file resolution remain outside this syntax layer.
-
-Capability-specific operations such as `taking(_:)`, `callingSelf()`,
-`aliasing(_:)`, `inheriting(_:)`, and `excluding(_:)` narrow matches while keeping the concrete
-SwiftSyntax node type, so `match.node` needs no casting.
-
-### Raw Visitor Escape Hatch
-
-When nothing typed fits, walk the tree yourself:
-
-```swift
-import SwiftSyntax
-
-final class ForceUnwrapVisitor: SyntaxVisitor, RuleFailureSource {
-    private let file: SourceFileContext
-    private(set) var failures: [RuleFailure] = []
-
-    init(file: SourceFileContext) {
-        self.file = file
-        super.init(viewMode: .sourceAccurate)
-    }
-
-    override func visit(_ node: ForceUnwrapExprSyntax) -> SyntaxVisitorContinueKind {
-        failures.append(file.failure(at: node, message: "Force unwrapping is not allowed here."))
-        return .skipChildren
-    }
-}
-
-Rules.visitor(
-    "project.no_force_unwrap",
-    severity: .error,
-    scope: .under("Sources"),
-    summary: "Production code handles optional absence explicitly."
-) { file in
-    ForceUnwrapVisitor(file: file)
-}
-```
-
-`SourceFileContext` exposes `path`, `component`, `source`, `syntax`,
-`position(of:)`, `location(for:)`, and `failure(at:message:evidence:)`.
-
-## Wiring Rules Into The Project
-
-Project rules join built-ins in the `Rules` block of `BumperBowling.swift`:
-
-```swift
-let bumper = BumperProject {
-    Architecture(AppComponent.self) {
-        Component(.core) {
-            Owns("Sources/Core")
-            Modules("Core")
-        }
-    }
-
-    Rules {
-        DependencyBoundaries(.error)
-        Rules.singleDeclaration("AccessibilityTarget", owner: "Sources/Core")
-        projectRules
-    }
-}
-```
-
-Rule IDs must be unique across built-in and project rules; a duplicate is a
-configuration error. Rules evaluate sequentially in declaration order, and the
-final report is sorted by path, line, column, rule ID, then message — so
-declaration order never changes the report.
-
-Add or update the consumer's rule-catalog entry in the same change that wires
-the rule into the project.
-
-## Where To Define Vocabulary
-
-Use the smallest placement that keeps the configuration readable.
-
-### Inline
-
-For one-off vocabulary, define values directly in `BumperBowling.swift`.
-
-### Repo-Local `.bumper/Sources`
-
-For vocabulary that belongs to one repository, put Swift files under
-`.bumper/Sources`. Bumper Bowling compiles those files beside
-`BumperBowling.swift` in the project runner:
-
-```text
-.bumper/
-  Sources/
-    ArchitectureVocabulary.swift
-    ProjectRules.swift
-BumperBowling.swift
-```
-
-```swift
-// .bumper/Sources/ArchitectureVocabulary.swift
-import BumperBowlingCore
-
-extension ComponentRequirement {
-    static let domainCore = ComponentRequirement(
-        .explicitDomainSurfaces,
-        .typedIdentity,
-        .immutableStoredState
-    )
-}
-
-extension ComponentShape {
-    static let domain = ComponentShape {
-        MayUse(.foundation)
-        DoesNotUse(.uiKit, .testing)
-        Requires(.domainCore, severity: .error)
-    }
-}
-```
-
-Repo-local `.bumper/Sources` files can import `SwiftSyntax` directly.
-
-### Local SwiftPM Package
-
-For vocabulary shared by multiple repositories, use a normal SwiftPM package at
-`.bumper/Package.swift`. Bumper Bowling expects a `BumperRules` library product
-and makes it importable from `BumperBowling.swift`. Importing a package never
-applies rules by convention; the project still opts in explicitly inside
-`Rules { ... }`. A packaged rule library must declare its own SwiftSyntax
-dependency when it names AST types.
-
-## Testing Rules
-
-Every project-defined closure, query, or visitor rule needs a positive fixture
-and a minimal mutation fixture. Assert the exact rule ID, path, message,
-available location, and promised evidence. Standard shapers are tested by
-Bumper Bowling; consumers test their own configuration and project rationale.
-
-Put repository-owned rule tests under `.bumper/Tests` and run them from the
-repository root:
-
-```text
-.bumper/
-  Sources/ProjectRules.swift
-  Tests/ProjectRulesTests.swift
-```
-
-```bash
-bumper test
-```
-
-`bumper test [root]` compiles `BumperBowling.swift`, repo-local rule sources,
-and the test files into one cached SwiftPM test target in source mode. When
-`.bumper` is a Swift package, Bumper runs ordinary `swift test` with
-`--package-path .bumper` instead, so the package owns its test targets and
-`@testable` imports have normal package-test visibility. Swift Testing and
-XCTest discovery work normally, and their exit status is returned by `bumper`.
-These tests are ordinary trusted project code and run with the same access as
-`swift test`; the configuration evaluation sandbox is not a test sandbox.
-
-`BumperBowlingTestSupport` tests exactly one rule (or one `RuleSet`) in memory,
-with no checkout and no filesystem, returning the same `RuleReport` the engine
-and CLI produce:
-
-```swift
-import BumperBowlingCore
-import BumperBowlingTestSupport
-import Testing
-
-@Test
-func flagsForeignDeclarations() throws {
-    let rule = Rules.singleDeclaration("AccessibilityTarget", owner: "Sources/Plans")
-
-    let report = try RuleTestHarness(rule).evaluate(
-        [
-            SourceInput.swift("Sources/Plans/Target.swift", component: "plans", source: "struct AccessibilityTarget {}"),
-            SourceInput.swift("Sources/Score/Foreign.swift", component: "score", source: "struct AccessibilityTarget {}"),
-        ]
-    )
-
-    #expect(report.violations.map(\.path.rawValue) == ["Sources/Score/Foreign.swift"])
-}
-```
-
-Pass an array of `SourceInput` values. The test-support convenience
-`SourceInput.swift(_:component:source:)` validates string paths and optional
-component names. Use `SourceInput(path:component:source:)` for typed values.
-The harness works under Swift Testing and XCTest.
-
-## Profiling Rules
-
-Every evaluation measures itself. `bumper lint --timings` prints the host
-phases (prepare, scan, evaluate) plus the slowest rules and fact providers to
-stderr, so a slow project rule is attributable by ID. Programmatically, the
-same numbers come from `evaluationRun`:
-
-```swift
-let run = try ruleSet.evaluationRun(configuration: configuration, repository: repository)
-run.telemetry.ruleSeconds.first  // the slowest rule, by ID
-run.telemetry.factSeconds        // per-provider derivation cost, slowest first
-```
-
-Fact durations are inclusive: a provider that derives other facts is charged
-for its dependencies. Providers derive at most once per run, so a fact
-appearing here cost exactly what it shows.
-
-Evaluation runs under a bounded budget (60 seconds by default). Raise it for
-legitimately large repositories with `BUMPER_EVALUATION_TIMEOUT_SECONDS`;
-profile with `--timings` before reaching for a bigger budget.
-
-## Built-In DSL Primitives
-
-Read the [built-in rule authoring catalog](built-ins/README.md) for every
-component requirement, graph assertion, shaper, query, scope, and fact
-provider. The catalog maps each convenience to its lower-level pieces.
-
-### Scoped syntax cardinality
-
-For syntax policies that are about how often a pattern occurs per file, use
-`Rules.assert`. It scopes the rule, evaluates a public `SyntaxPattern`, and
-reports the observed count as structured evidence. Excess matches retain their
-source location; missing matches report against the affected file.
-
-The default counting unit is `.perFile`. Use `counting: .repository` to combine
-matches across selected files. File scope and counting unit are independent.
-The [factory reference](built-ins/rule-factories.md#cardinality-rule) defines
-shortage diagnostics, empty scopes, and count validation.
-
-```swift
-Rules.assert(
-    functionCalls(),
-    cardinality: .none,
-    id: "domain.no_function_calls",
-    summary: "Domain files do not make function calls.",
-    scope: .under("Sources/Domain")
-)
-
-Rules.assert(
-    SyntaxQuery<EnumDeclSyntax>(),
-    cardinality: .atLeast(1),
-    id: "workflow.has_enum",
-    summary: "Each workflow file declares an enum."
-)
-```
-
-Available cardinalities are `.none`, `.atLeast(_)`, `.atMost(_)`, and
-`.exactly(_)`. This API is neutral over SwiftSyntax node types; domain-specific
-defaults should compose it rather than add privileged rule infrastructure.
-
-## Boundary
-
-Use SwiftLint for local style, formatting, and code-smell policy.
-
-Use the Swift compiler for inferred types, symbol resolution, macro expansion,
-protocol conformance truth, and build-target truth.
-
-Use Bumper Bowling when the rule is about project policy and SwiftSyntax
-can observe enough source facts to report deterministic evidence.
-
-Every finding should be explainable as:
-
-```text
-observed source fact + declared scope = mismatch
-```
-
-If Bumper Bowling cannot show the observed fact, it should not report the
-violation.
-
-## Authoring Guidance
-
-- Prefer positive vocabulary: `Requires(.domainCore)` is easier to review than
-  scattered prohibitions.
-- Author at the highest rung of the ladder that expresses the rule.
-- Keep vocabulary repository-owned unless several repositories actually share
-  it.
-- Start narrow. Scope stricter requirements to paths that are already clean or
-  intentionally being cleaned.
-- Use warning severity for migration lanes and error severity for contracts CI
-  should enforce.
-- Do not encode SwiftLint rules as Bumper rules.
-- Do not encode compiler questions as SwiftSyntax rules.
-- Do not add generated accessors, registries, remote package policy, JSON
-  configuration, or auto-loaded rules.
+Evaluate passing and failing arrays of `.swift(path, source:)` fixtures through
+the same harness. Assert zero findings for passing examples. For failing examples,
+assert the count and use `ViolationMatcher` for identity, path, location, severity,
+and reason. Include near misses that could satisfy the wrong relationship.
+
+The harness writes fixtures under an isolated temporary root and uses SwiftLint's
+execution path. It normalizes findings and removes temporary files. It does not
+change the process directory or introduce another evaluator.
+
+Run these tests with `bumper test .`, or `swift test --package-path .bumper`.
+
+## Limits
+
+These are syntax checks. Written conformances can differ from compiler type
+identity. A call's spelling does not establish its resolved declaration.
+Aliases, indirect calls, extensions, and synthesized declarations need explicit
+policy decisions. Do not describe these checks as compiler-backed analysis.
+
+Rule bodies and callbacks are nonthrowing, matching SwiftLint's rule API.
+Configuration and input preflight failures stop the host. Do not catch an
+analysis error and return an empty finding list. Native `SourceKitFreeRule`
+remains available when the DSL does not improve a rule.

@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
@@ -17,56 +16,42 @@ concurrency:
 jobs:
   bumper-tests:
     name: Bumper Tests
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 60
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Cache SwiftPM build
+      - name: Cache SwiftPM builds
         uses: actions/cache@v4
         with:
-          path: .build
-          key: spm-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          path: |
+            .build
+            .bumper/.build
+          key: native-spm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Package.swift', 'Package.resolved', '.bumper/Package.swift', '.bumper/Package.resolved') }}
           restore-keys: |
-            spm-${{ runner.os }}-
-
-      - name: Cache Bumper runner
-        uses: actions/cache@v4
-        with:
-          path: .bumper-ci-cache
-          key: bumper-runner-${{ runner.os }}-${{ hashFiles('BumperBowling.swift', '.bumper/**', 'Sources/**', 'Package.swift') }}
-          restore-keys: |
-            bumper-runner-${{ runner.os }}-
+            native-spm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Show toolchain versions
         run: |
           xcodebuild -version
           swift --version
 
-      - name: Run SwiftLint
+      - name: Run strict SwiftLint
         run: |
           if ! command -v swiftlint >/dev/null; then
             brew install swiftlint
           fi
           swiftlint lint --strict
 
-      - name: Run Swift package tests
+      - name: Run package and runtime tests
         run: swift test
-        env:
-          # Configuration runners are disposable CI tools. Keep their cold
-          # compile out of the optimized path on constrained hosts.
-          BUMPER_RUNNER_BUILD_CONFIGURATION: debug
 
-      - name: Run repository policy tests
+      - name: Run repository policy and recipe tests
         run: swift run bumper test .
-        env:
-          BUMPER_CACHE_DIR: ${{ github.workspace }}/.bumper-ci-cache
-          BUMPER_RUNNER_BUILD_CONFIGURATION: debug
 
-      - name: Run Bumper CLI lint
+      - name: Run repository self-lint
         run: swift run bumper lint .
-        env:
-          BUMPER_CACHE_DIR: ${{ github.workspace }}/.bumper-ci-cache
-          BUMPER_RUNNER_BUILD_CONFIGURATION: debug
+
+      - name: Check starter, edits, build reuse, and distribution
+        run: Scripts/verify-rule-journey.sh

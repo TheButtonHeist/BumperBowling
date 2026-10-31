@@ -1,268 +1,120 @@
 import Foundation
+import SwiftLintFramework
 
-public struct RepositoryScanLimits: Equatable, Sendable {
-    public static let `default` = RepositoryScanLimits()
-
+public struct RepositoryScanLimits: Sendable {
     public let maxFiles: Int
-    public let maxFileBytes: UInt64
-    public let maxTotalBytes: UInt64
-    public let maxConcurrentParses: Int
+    public let maxFileBytes: Int
+    public let maxTotalBytes: Int
 
-    public init(
-        maxFiles: Int = 20_000,
-        maxFileBytes: UInt64 = 10 * 1024 * 1024,
-        maxTotalBytes: UInt64 = 200 * 1024 * 1024,
-        maxConcurrentParses: Int = 8
-    ) {
-        self.maxFiles = Swift.max(1, maxFiles)
-        self.maxFileBytes = Swift.max(1, maxFileBytes)
-        self.maxTotalBytes = Swift.max(1, maxTotalBytes)
-        self.maxConcurrentParses = Swift.max(1, maxConcurrentParses)
+    public init(maxFiles: Int = 20_000, maxFileBytes: Int = 10 * 1024 * 1024, maxTotalBytes: Int = 200 * 1024 * 1024) {
+        self.maxFiles = max(1, maxFiles)
+        self.maxFileBytes = min(Int.max - 1, max(1, maxFileBytes))
+        self.maxTotalBytes = max(1, maxTotalBytes)
     }
 }
 
+/// Discovers bounded input before SwiftLint reads or parses it.
 public struct RepositoryScanner: Sendable {
-    private let rules: ArchitectureRules
-    private let parser: SwiftFileParser
+    private let included: [String]
+    private let excluded: [String]
     private let limits: RepositoryScanLimits
 
-    public init(
-        scan: ScanConfiguration,
-        parser: SwiftFileParser = SwiftFileParser(),
-        limits: RepositoryScanLimits = .default
-    ) throws {
-        try self.init(configuration: ArchitectureConfiguration(
-            includedPaths: scan.includedPaths, excludedPaths: scan.excludedPaths
-        ), parser: parser, limits: limits)
-    }
-
-    public init(
-        configuration: ArchitectureConfiguration,
-        parser: SwiftFileParser = SwiftFileParser(),
-        limits: RepositoryScanLimits = .default
-    ) throws {
-        self.rules = try ArchitectureRules(configuration: configuration)
-        self.parser = parser
+    public init(included: [String] = ["Sources"], excluded: [String] = [], limits: RepositoryScanLimits = .init()) {
+        self.included = included
+        self.excluded = excluded
         self.limits = limits
     }
 
-    public init(
-        rules: ArchitectureRules,
-        parser: SwiftFileParser = SwiftFileParser(),
-        limits: RepositoryScanLimits = .default
-    ) {
-        self.rules = rules
-        self.parser = parser
-        self.limits = limits
-    }
-
-    /// Reads all included Swift sources, with optional component ownership.
-    /// Use `scanInput` to retain coverage metadata for architecture checks.
-    public func scanSources(root: URL) async throws -> [SourceInput] {
-        let input = try await scanInput(root: root)
-        return input.files
-    }
-
-    /// Inventories included sources before resolving ownership. Unsupported
-    /// languages are counted but never passed to SwiftSyntax.
-    public func scanInput(root: URL) async throws -> RepositoryInput {
-        let inventory = try sourceFileInputs(in: root.standardizedFileURL)
-        let files = try inventory.inputs.map { input in
-            guard let source = try? String(contentsOf: input.url, encoding: .utf8) else {
-                throw BumperError.unreadableFile(input.relativePath.rawValue)
+    public func scan(root: URL) throws -> [SwiftLintFile] {
+        let root = root.resolvingSymlinksInPath().standardizedFileURL
+        let canonicalRoot = root.resolvingSymlinksInPath().path
+        var files: [SwiftLintFile] = []
+        var seen: Set<String> = []
+        var totalBytes = 0
+        for path in excluded { try Self.validateRelativePath(path) }
+        guard !included.isEmpty else { throw BumperError("Include at least one source path.") }
+        for path in included {
+            try Self.validateRelativePath(path)
+            let url = root.appendingPathComponent(path).standardizedFileURL
+            try validateContainment(url, root: canonicalRoot)
+            var directory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &directory) else {
+                throw BumperError("Included source path does not exist: \(path)")
             }
-            return SourceInput(path: input.relativePath, component: input.component, source: source)
-        }.sorted { $0.path.rawValue < $1.path.rawValue }
-        return RepositoryInput(architecture: rules.configuration, files: files, coverage: inventory.coverage)
-    }
-
-    public func scan(root: URL) async throws -> RepositoryFacts {
-        let root = root.standardizedFileURL
-        let inventory = try sourceFileInputs(in: root)
-        let inputs = inventory.inputs
-
-        var files: [SourceFileFacts] = []
-        for start in stride(from: 0, to: inputs.count, by: limits.maxConcurrentParses) {
-            let end = Swift.min(start + limits.maxConcurrentParses, inputs.count)
-            let chunk = inputs[start..<end]
-
-            let parsedFiles = try await withThrowingTaskGroup(of: SourceFileFacts.self) { group in
-                for input in chunk {
-                    let parser = parser
-                    group.addTask {
-                        try parser.parseFile(
-                            at: input.url,
-                            relativePath: input.relativePath,
-                            component: input.component
-                        )
-                    }
-                }
-
-                var parsedFiles: [SourceFileFacts] = []
-                for try await file in group {
-                    parsedFiles.append(file)
-                }
-                return parsedFiles
+            if !directory.boolValue {
+                try append(url, root: root, canonicalRoot: canonicalRoot, seen: &seen, totalBytes: &totalBytes, files: &files)
+                continue
             }
-
-            files.append(contentsOf: parsedFiles)
-        }
-
-        return RepositoryFacts(files: files.sorted(by: { $0.path.rawValue < $1.path.rawValue }), coverage: inventory.coverage)
-    }
-
-    private func sourceFileInputs(in root: URL) throws -> (inputs: [SwiftSourceFileInput], coverage: SourceCoverageSummary) {
-        let fileManager = FileManager.default
-        let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
-        guard let enumerator = fileManager.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return ([], SourceCoverageSummary(paths: [], rules: rules))
-        }
-
-        var inputs: [SwiftSourceFileInput] = []
-        var paths: [RelativeFilePath] = []
-        var totalBytes: UInt64 = 0
-
-        for case let url as URL in enumerator {
-            let relativePath = Self.relativePath(for: url, root: root)
-            if shouldSkip(relativePath) {
-                if url.hasDirectoryPath {
+            let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey])
+            guard values.isSymbolicLink != true else { throw BumperError("Refusing symlinked source directory: \(path)") }
+            var enumerationError: Error?
+            guard let enumerator = FileManager.default.enumerator(
+                at: url, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles], errorHandler: { _, error in
+                    enumerationError = error
+                    return false
+                }
+            ) else { throw BumperError("Could not enumerate sources: \(path)") }
+            for case let discovered as URL in enumerator {
+                let file = discovered.deletingLastPathComponent().standardizedFileURL.appendingPathComponent(discovered.lastPathComponent)
+                let relative = String(file.path.dropFirst(root.path.count + 1))
+                if isExcluded(relative) {
                     enumerator.skipDescendants()
+                    continue
                 }
-                continue
+                let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                if values.isSymbolicLink == true {
+                    throw BumperError("Refusing symlinked source path: \(relative)")
+                }
+                if values.isRegularFile == true {
+                    try append(file, root: root, canonicalRoot: canonicalRoot, seen: &seen, totalBytes: &totalBytes, files: &files)
+                }
             }
-
-            guard let typedRelativePath = try? RelativeFilePath(relativePath),
-                  rules.includes(typedRelativePath),
-                  SourceCoverageSummary.isSource(typedRelativePath) else {
-                continue
-            }
-
-            let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
-            if resourceValues.isSymbolicLink == true, isSwiftFile(typedRelativePath) {
-                throw BumperError.unsafeSymlinkedSourceFile(typedRelativePath.rawValue)
-            }
-            guard resourceValues.isRegularFile == true || resourceValues.isSymbolicLink == true else {
-                continue
-            }
-
-            guard paths.count < limits.maxFiles else {
-                throw BumperError.repositoryScanLimitExceeded("More than \(limits.maxFiles) Swift source files or unsupported source files matched the configured paths.")
-            }
-            paths.append(typedRelativePath)
-            guard isSwiftFile(typedRelativePath) else { continue }
-            try Self.validateContainment(url: url, root: canonicalRoot, reportedPath: typedRelativePath.rawValue)
-
-            let fileSize = UInt64(resourceValues.fileSize ?? 0)
-            guard fileSize <= limits.maxFileBytes else {
-                throw BumperError.sourceFileTooLarge(
-                    typedRelativePath.rawValue,
-                    fileSize,
-                    limits.maxFileBytes
-                )
-            }
-            totalBytes += fileSize
-            guard totalBytes <= limits.maxTotalBytes else {
-                throw BumperError.repositoryScanLimitExceeded(
-                    "Swift source files exceed \(limits.maxTotalBytes) total bytes."
-                )
-            }
-            inputs.append(
-                SwiftSourceFileInput(
-                    url: url,
-                    relativePath: typedRelativePath,
-                    component: rules.component(containing: typedRelativePath)?.id
-                )
-            )
+            if let enumerationError { throw enumerationError }
         }
-
-        return (inputs, SourceCoverageSummary(paths: paths, rules: rules))
+        guard !files.isEmpty else { throw BumperError("No Swift source files matched the included paths.") }
+        return files.sorted { ($0.path ?? "") < ($1.path ?? "") }
     }
 
-    public func scanFile(_ url: URL, root: URL) async throws -> SourceFileFacts {
-        let root = root.standardizedFileURL
-        let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
-        try Self.validateContainment(url: url, root: canonicalRoot, reportedPath: url.path)
-
-        let relativePath = Self.relativePath(for: url, root: root)
-        let typedRelativePath = try RelativeFilePath(relativePath)
-        guard isSwiftFile(typedRelativePath) else {
-            throw BumperError.unsupportedLanguage(relativePath)
-        }
-
-        let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
-        if resourceValues.isSymbolicLink == true {
-            throw BumperError.unsafeSymlinkedSourceFile(typedRelativePath.rawValue)
-        }
-        guard resourceValues.isRegularFile == true else {
-            throw BumperError.unreadableFile(typedRelativePath.rawValue)
-        }
-
-        try Self.validateContainment(
-            url: url,
-            root: canonicalRoot,
-            reportedPath: typedRelativePath.rawValue
-        )
-
-        let fileSize = UInt64(resourceValues.fileSize ?? 0)
-        guard fileSize <= limits.maxFileBytes else {
-            throw BumperError.sourceFileTooLarge(
-                typedRelativePath.rawValue,
-                fileSize,
-                limits.maxFileBytes
-            )
-        }
-
-        return try parser.parseFile(
-            at: url,
-            relativePath: typedRelativePath,
-            component: rules.component(containing: typedRelativePath)?.id
-        )
+    private func append(
+        _ url: URL, root: URL, canonicalRoot: String, seen: inout Set<String>,
+        totalBytes: inout Int, files: inout [SwiftLintFile]
+    ) throws {
+        let path = String(url.path.dropFirst(root.path.count + 1))
+        guard url.pathExtension == "swift", !isExcluded(path), seen.insert(path).inserted else { return }
+        try validateContainment(url, root: canonicalRoot)
+        let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey, .fileSizeKey])
+        guard values.isSymbolicLink != true else { throw BumperError("Refusing symlinked Swift source file: \(path)") }
+        guard values.isRegularFile == true else { throw BumperError("Could not read source file: \(path)") }
+        guard files.count < limits.maxFiles else { throw BumperError("More than \(limits.maxFiles) Swift source files matched.") }
+        guard values.fileSize ?? 0 <= limits.maxFileBytes else { throw BumperError("Source file exceeds \(limits.maxFileBytes) bytes: \(path)") }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: limits.maxFileBytes + 1) ?? Data()
+        guard data.count <= limits.maxFileBytes else { throw BumperError("Source file exceeds \(limits.maxFileBytes) bytes: \(path)") }
+        guard data.count <= limits.maxTotalBytes - totalBytes else { throw BumperError("Swift sources exceed \(limits.maxTotalBytes) total bytes.") }
+        totalBytes += data.count
+        guard let source = String(data: data, encoding: .utf8) else { throw BumperError("Source file is not UTF-8: \(path)") }
+        let file = SwiftLintFile(pathDeferringReading: url.path)
+        // Supply the bounded UTF-8 snapshot before SwiftLint can read or parse it.
+        file.file.contents = source
+        files.append(file)
     }
 
-    private func isSwiftFile(_ path: RelativeFilePath) -> Bool {
-        StringMatcher.suffix(".swift").matches(path)
+    private func isExcluded(_ path: String) -> Bool {
+        ([".build", ".git", "DerivedData"] + excluded).contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 
-    private func shouldSkip(_ relativePath: String) -> Bool {
-        StringMatcher.prefix(".build/").matches(relativePath)
-            || StringMatcher.prefix(".git/").matches(relativePath)
-            || StringMatcher.prefix("DerivedData/").matches(relativePath)
-    }
-
-    private static func relativePath(for url: URL, root: URL) -> String {
-        let rootPath = root.standardizedFileURL.path
-        // Normalize the existing parent so dangling links keep the same root spelling.
-        let filePath = url.deletingLastPathComponent().standardizedFileURL
-            .appendingPathComponent(url.lastPathComponent).path
-
-        if StringMatcher.exact(rootPath).matches(filePath) {
-            return ""
-        }
-
-        let prefix = StringMatcher.suffix("/").matches(rootPath) ? rootPath : rootPath + "/"
-        if StringMatcher.prefix(prefix).matches(filePath) {
-            return String(filePath.dropFirst(prefix.count))
-        }
-
-        return filePath
-    }
-
-    private static func validateContainment(url: URL, root: URL, reportedPath: String) throws {
-        let rootPath = root.path
-        let filePath = url.resolvingSymlinksInPath().standardizedFileURL.path
-        let prefix = StringMatcher.suffix("/").matches(rootPath) ? rootPath : rootPath + "/"
-        guard StringMatcher.exact(rootPath).matches(filePath) || StringMatcher.prefix(prefix).matches(filePath) else {
-            throw BumperError.sourceFileOutsideRoot(reportedPath, rootPath)
+    private func validateContainment(_ url: URL, root: String) throws {
+        guard url.resolvingSymlinksInPath().path.hasPrefix(root + "/") else {
+            throw BumperError("Source path is outside repository root \(root): \(url.path)")
         }
     }
-}
 
-private struct SwiftSourceFileInput: Sendable {
-    let url: URL
-    let relativePath: RelativeFilePath
-    let component: ComponentID?
+    static func validateRelativePath(_ path: String) throws {
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.contains("\\"),
+              path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            throw BumperError("Expected a repository-relative path: \(path)")
+        }
+    }
 }
