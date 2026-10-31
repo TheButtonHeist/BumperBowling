@@ -21,9 +21,11 @@ struct RuleTestHarnessTests {
         #expect(throws: BumperError.self) { try RuleTestHarness(FixtureRule.self).evaluate([.swift(path, source: "")]) }
     }
 
-    @Test func rejectsFindingsAnchoredOutsideTheSelectedSubjects() throws {
+    @Test(arguments: [false, true])
+    func rejectsFindingsAnchoredOutsideTheSelectedSubjects(builderRequirement: Bool) throws {
+        let harness = builderRequirement ? RuleTestHarness(MisplacedRequirementRule.self) : RuleTestHarness(MisplacedFindingRule.self)
         do {
-            _ = try RuleTestHarness(MisplacedFindingRule.self).evaluate([
+            _ = try harness.evaluate([
                 .swift("Sources/Subject.swift", source: "struct Subject {}"),
                 .swift("Sources/Other.swift", source: "struct Other {}"),
             ])
@@ -46,13 +48,24 @@ struct RuleTestHarnessTests {
     }
 
     @Test func rejectsDuplicateRuleIDsInsteadOfSilentlyOverwriting() {
-        #expect(throws: BumperError.self) {
-            try RuleTestHarness([FixtureRule.self, FixtureRule.self]).evaluate([.swift("File.swift", source: "struct Example {}")])
+        let harnesses = [
+            RuleTestHarness([FixtureRule.self, FixtureRule.self]),
+            RuleTestHarness { MisplacedFindingRule.self; DuplicateFindingRule.self },
+        ]
+        for harness in harnesses {
+            do {
+                _ = try harness.evaluate([.swift("Sources/Subject.swift", source: "struct Example {}")])
+                Issue.record("Expected duplicate identifiers to fail before validation.")
+            } catch let error as BumperError {
+                #expect(error.description.hasPrefix("Duplicate rule identifier:"))
+            } catch {
+                Issue.record("Unexpected error: \(error)")
+            }
         }
     }
 }
 
-private struct FixtureRule: SourceKitFreeRule {
+struct FixtureRule: SourceKitFreeRule {
     var configuration = SeverityConfiguration<Self>(.error)
     static let description = RuleDescription(identifier: "fixture_rule", name: "Fixture Rule", description: "Fixture finding", kind: .lint)
     func validate(file: SwiftLintFile) -> [StyleViolation] {
@@ -62,9 +75,8 @@ private struct FixtureRule: SourceKitFreeRule {
 }
 
 private struct MisplacedFindingRule: SyntaxRule {
-    var configuration = RuleSettings<Self>()
     static let metadata = RuleMetadata(id: "misplaced_finding", summary: "Subject scope contract")
-    var body: SyntaxCheck {
+    static var body: SyntaxCheck {
         Rules.files(scope: .files(["Sources/Subject.swift"])) { file in
             let path = file.file.path?.replacingOccurrences(of: "Subject.swift", with: "Other.swift")
             return [RuleFailure(location: Location(file: path, line: 1, character: 1), message: "Wrong subject")]
@@ -73,7 +85,25 @@ private struct MisplacedFindingRule: SyntaxRule {
 }
 
 private struct InvalidScopeRule: SyntaxRule {
-    var configuration = RuleSettings<Self>()
     static let metadata = RuleMetadata(id: "invalid_scope", summary: "Invalid scope contract")
-    var body: SyntaxCheck { Rules.files(scope: .under("../Sources")) { _ in [] } }
+    static var body: SyntaxCheck { Rules.forEach(structs().inheriting("Unused"), scope: .under("../Sources")) { _ in } }
+}
+
+private enum DuplicateFindingRule: SyntaxRule {
+    static let metadata = MisplacedFindingRule.metadata
+    static var body: SyntaxCheck {}
+}
+
+private enum MisplacedRequirementRule: RepositoryRule {
+    typealias FileInfo = SourceFileContext
+    static let metadata = RuleMetadata(id: "misplaced_requirement", summary: "Requirement anchors retain scope checks")
+    static var body: RepositoryCheck<FileInfo> {
+        Rules.repository(scope: .files(["Sources/Subject.swift"]), collect: { $0 }, check: { _, files in
+            for other in files where other.path == "Sources/Other.swift" {
+                for subject in structs().matches(in: other) {
+                    Rules.require(false, at: subject, message: "Wrong subject")
+                }
+            }
+        })
+    }
 }

@@ -1,7 +1,9 @@
 # Repository conventions
 
-Edit `Sources/BumperRules/SwiftUIPreviewRule.swift` and its paired examples.
-Register additional native SwiftLint rule types in `Sources/BumperRulesRunner/main.swift`.
+Build your convention in `Sources/BumperRules/SwiftUIPreviewRule.swift`.
+Its body is a builder: compose requirements, use ordinary Swift, and extract helpers.
+Keep its examples alongside the rule to check its meaning.
+Register additional Bumper or native SwiftLint rule types in `Sources/BumperRulesRunner/main.swift`.
 Set the runner's `included` paths to the source roots your repository uses.
 
 From the repository root:

@@ -75,6 +75,8 @@ import Testing
     ("Sources/BumperBowlingCore/ConfigurationCommandRunner.swift", "BoundedOutputBuffer"),
     ("Sources/BumperBowlingCore/SyntaxQuery.swift", "SyntaxNodeCollector"),
     ("Sources/BumperBowlingCore/RuleDefinition.swift", "RuleSettings"),
+    ("Sources/BumperBowlingCore/RuleDefinition.swift", "NativeSyntaxRule"),
+    ("Sources/BumperBowlingCore/RuleDefinition.swift", "NativeRepositoryRule"),
 ])
 func mutationExceptionsBelongToDeclarations(implementation: (String, String)) throws {
     let (path, owner) = implementation

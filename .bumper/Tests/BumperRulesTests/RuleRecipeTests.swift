@@ -56,15 +56,15 @@ import Testing
     """)
     let passing = try harness.evaluate([
         routes,
-        .swift("Sources/App/Home.swift", source: "register(.home)"),
-        .swift("Sources/App/Detail.swift", source: "register(.detail)"),
+        .swift("Sources/Registrations/Home.swift", source: "register(.home)"),
+        .swift("Sources/Registrations/Detail.swift", source: "register(.detail)"),
         .swift("Sources/Other/Routes.swift", source: "enum AppRoute { case unrelated }"),
     ])
     #expect(passing.isEmpty)
     let failing = try harness.evaluate([
         routes,
-        .swift("Sources/App/Home.swift", source: "register(.home)"),
-        .swift("Sources/App/Duplicate.swift", source: "register(.home)"),
+        .swift("Sources/Registrations/Home.swift", source: "register(.home)"),
+        .swift("Sources/Registrations/Duplicate.swift", source: "register(.home)"),
         .swift("Sources/App/Other.swift", source: "other.register(.detail)"),
     ])
     #expect(failing.count == 2)
@@ -77,7 +77,7 @@ import Testing
     // A companion edit must affect the next run; persisted violation caching is off.
     let repaired = try harness.evaluate([
         routes,
-        .swift("Sources/App/Registrations.swift", source: "register(.home); register(.detail)"),
+        .swift("Sources/Other/Registrations.swift", source: "register(.home); register(.detail)"),
     ])
     #expect(repaired.isEmpty)
 }

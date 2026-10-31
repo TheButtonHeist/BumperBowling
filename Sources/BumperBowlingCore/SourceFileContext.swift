@@ -4,6 +4,7 @@ import SwiftSyntax
 
 /// Repository-relative identity over SwiftLint's cached syntax. Never parses source.
 public struct SourceFileContext: Sendable {
+    public let root: URL
     public let file: SwiftLintFile
     public let path: String
     public let syntax: SourceFileSyntax
@@ -11,11 +12,13 @@ public struct SourceFileContext: Sendable {
     public let locationConverter: SourceLocationConverter
 
     public init(file: SwiftLintFile, root: URL) {
+        let root = root.resolvingSymlinksInPath().standardizedFileURL
+        self.root = root
         self.file = file
         self.source = file.contents
         let syntax = file.syntaxTree
         self.syntax = syntax
-        let prefix = root.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+        let prefix = root.path + "/"
         let absolute = file.path.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path } ?? ""
         let path = absolute.hasPrefix(prefix) ? String(absolute.dropFirst(prefix.count)) : absolute
         self.path = path

@@ -6,8 +6,9 @@ and near-miss fixtures over the public harness.
 
 ## Match each view with its preview
 
-The starter uses `Rules.forbid` over view structs without a matching same-file
-preview. Descendant queries connect a preview macro to its constructor calls.
+The starter uses `Rules.forEach` to select view structs and `Rules.require`
+to require a matching same-file preview. Descendant queries connect a preview
+macro to its constructor calls.
 
 - [Rule](../Sources/BumperBowlingCore/Starter/Sources/BumperRules/SwiftUIPreviewRule.swift)
 - [Paired examples](../Sources/BumperBowlingCore/Starter/Tests/BumperRulesTests/SwiftUIPreviewRuleTests.swift)
@@ -21,8 +22,8 @@ qualified types, aliases, or whether a preview executes a constructor.
 
 ## Cover direct stored fields with explicit keys
 
-`Rules.each` checks each explicitly `Codable` struct. Direct-member queries find
-its own `CodingKeys`, cases, and stored instance properties. Ordinary Swift sets
+`Rules.forEach` builds checks for each explicitly `Codable` struct. Direct-member
+queries find its own `CodingKeys`, cases, and stored instance properties. Ordinary Swift sets
 identify missing keys.
 
 - [Rule](../.bumper/Sources/BumperRules/ExplicitCodingKeysRule.swift)
@@ -38,7 +39,8 @@ repositories that do so should change the policy or omit this rule.
 ## Register each route exactly once
 
 `Rules.repository` collects typed route cases and bare registrations from all
-included files. The subject scope selects `Sources/App/Routes.swift`.
+included files. Its validation builder emits a requirement for each route.
+The subject scope selects `Sources/App/Routes.swift`.
 
 - [Rule](../.bumper/Sources/BumperRules/RouteRegistrationsRule.swift)
 - [Paired examples and subject failure](../.bumper/Tests/BumperRulesTests/RuleRecipeTests.swift)

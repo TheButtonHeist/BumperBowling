@@ -31,10 +31,10 @@ perform a partial automatic conversion.
 
 | Previous API | New direction |
 | --- | --- |
-| `let rule = Rules.forbid(..., id:summary:)` | Named `SyntaxRule`; static `RuleMetadata`; `body` uses `Rules.forbid` |
-| `Rules.each(..., id:summary:)` | The same query/check inside a `SyntaxRule.body` |
+| `let rule = Rules.forbid(..., id:summary:)` | Named `SyntaxRule`; static `RuleMetadata`; static builder `body` uses `Rules.forbid` |
+| `Rules.each(..., id:summary:)` | The same query/check inside a static `SyntaxRule.body` |
 | `Rules.files` / `VisitorRule` | `Rules.files` over the existing tree; ordinary SwiftSyntax visitors |
-| `Rules.repository` with `DerivedFact` | `RepositoryRule.body` with `Rules.repository(scope:collect:)` and typed `FileInfo` |
+| `Rules.repository` with `DerivedFact` | static `RepositoryRule.body` with `Rules.repository(scope:collect:)` and typed `FileInfo` |
 | `SourceFileContext` parsing initializer | Context supplied by the DSL over SwiftLint’s cached tree |
 | `RuleScope.under` / `.files` | Repository-relative scope with the same path intent |
 | Component-derived scopes | Explicit source paths or a repository-owned scope predicate |
@@ -53,6 +53,32 @@ The three canonical migrations are executable: matching previews, direct
 `CodingKeys` coverage, and cross-file route registration. See
 [recipes](RULE_RECIPES.md).
 
+## Builder authoring
+
+Authored rules declare static metadata and bodies. Remove native
+`configuration = RuleSettings<Self>()` storage and `init()` from rule types.
+Those requirements now belong to private SwiftLint adapters. The repository
+root is available as `file.root` in raw callbacks. The old public `BumperRule`
+protocol is removed. Custom native rules can conform to `SourceKitFreeRule`
+directly.
+
+Low-level `BumperRunner` methods still accept native rule types. For authored
+rule types, use the project builder or pass `BumperProject { MyRule.self }.rules`.
+The adapters remain internal.
+
+`SyntaxRule.body` is a check builder. Use `Rules.forEach` for per-match builder
+bodies and `Rules.require` for Boolean or same-file requirements. Existing
+`Rules.each` and `Rules.files` callbacks still return raw failures.
+
+`Rules.repository` keeps its typed collection closure; its check closure now
+builds checks. Wrap custom array-producing logic in `Rules.files`, or use a loop
+that emits requirements. Do not return raw failure arrays from that builder.
+
+To register several authored types in a fixture harness, use
+`RuleTestHarness { FirstRule.self; SecondRule.self }`. Native rule arrays remain
+supported. One authored type still has one stable identity; configurable rule
+instances are not introduced by this change.
+
 ## Architecture features
 
 `Architecture`, `Component`, `ComponentRequirement`, `ComponentShape`,
@@ -69,8 +95,8 @@ The repository’s parser, process, and declaration-level mutation policies are
 ported. Direct parsing is now forbidden everywhere in Bumper source because
 SwiftLint owns parsing. Mutation exceptions remain only for `BoundedOutputBuffer`
 in `ConfigurationCommandRunner.swift`, `SyntaxNodeCollector` in `SyntaxQuery.swift`,
-and native `RuleSettings` in `RuleDefinition.swift`. New mutable models in those
-files still fail. The former parser visitor and fact cache no longer exist.
+and native `RuleSettings`, `NativeSyntaxRule`, and `NativeRepositoryRule` in
+`RuleDefinition.swift`. New mutable models in those files still fail. The former parser visitor and fact cache no longer exist.
 
 ## Diagnostics and failures
 

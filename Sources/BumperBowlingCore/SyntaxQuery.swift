@@ -12,6 +12,12 @@ public extension SyntaxPattern {
     }
 }
 
+extension SyntaxPattern {
+    func hasMatch(in file: SourceFileContext) -> Bool {
+        matches(in: file).contains { $0.file.syntax.id == file.syntax.id && $0.node.root.id == file.syntax.id }
+    }
+}
+
 public extension SyntaxPattern where Match: DeclSyntaxProtocol {
     /// Direct members only; declarations inside nested types do not belong to the owner.
     func members<Owner: DeclGroupSyntax>(of owner: SyntaxMatch<Owner>) -> [SyntaxMatch<Match>] {
@@ -120,9 +126,7 @@ public struct SyntaxQuery<Node: SyntaxProtocol>: SyntaxPattern, Sendable {
         inSameFile related: @escaping @Sendable (SyntaxMatch<Node>) -> Related
     ) -> Self {
         filter { subject in
-            !related(subject).matches(in: subject.file).contains {
-                $0.file.syntax.id == subject.file.syntax.id && $0.node.root.id == subject.file.syntax.id
-            }
+            !related(subject).hasMatch(in: subject.file)
         }
     }
 }

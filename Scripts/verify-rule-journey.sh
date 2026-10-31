@@ -48,12 +48,10 @@ cat > "$repository/.bumper/Sources/BumperRules/IsolationProbe.swift" <<'PROBE'
 import BumperBowlingCore
 import Foundation
 public struct IsolationProbe: SyntaxRule {
-    public var configuration = RuleSettings<Self>()
     public static let metadata = RuleMetadata(id: "runtime.isolation", summary: "Lint isolates rule execution")
-    public init() {}
-    public var body: SyntaxCheck {
-        let marker = configuration.root.appendingPathComponent("sandbox-marker")
-        return Rules.files { file in
+    public static var body: SyntaxCheck {
+        Rules.files { file in
+            let marker = file.root.appendingPathComponent("sandbox-marker")
             var wrote = false
             do { try "probe".write(to: marker, atomically: false, encoding: .utf8); wrote = true } catch {}
             if wrote || ProcessInfo.processInfo.environment["BUMPER_PROBE_SECRET"] != nil {
@@ -132,6 +130,7 @@ set +e
 input_status=$?
 set -e
 test "$input_status" -eq 2
+printf '%s\n' 'struct SecondView: View {}' '#Preview { SecondView() }' > "$second/Sources/Features/SecondView.swift"
 printf '\nthis is invalid Swift\n' >> "$second/.bumper/Sources/BumperRulesRunner/main.swift"
 set +e
 "$bumper_binary" lint "$second" >"$task_root/invalid-rule.log" 2>&1

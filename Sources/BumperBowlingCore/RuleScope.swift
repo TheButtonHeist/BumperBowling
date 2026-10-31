@@ -24,6 +24,10 @@ public struct RuleScope: Sendable {
     }
     public func includes(_ file: SourceFileContext) -> Bool { predicate(file) }
 
+    static func union(_ scopes: [Self]) -> Self {
+        Self(paths: scopes.flatMap(\.paths)) { file in scopes.contains { $0.includes(file) } }
+    }
+
     func validate() throws {
         for path in paths { try RepositoryScanner.validateRelativePath(path) }
     }

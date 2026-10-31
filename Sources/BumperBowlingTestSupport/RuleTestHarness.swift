@@ -6,6 +6,9 @@ import SwiftLintFramework
 public struct RuleTestHarness: Sendable {
     private let rules: [any Rule.Type]
 
+    public init<Author: SyntaxRule>(_ rule: Author.Type) { self.rules = BumperProject { rule }.rules }
+    public init<Author: RepositoryRule>(_ rule: Author.Type) { self.rules = BumperProject { rule }.rules }
+    public init(@RuleSetBuilder _ rules: () -> [any Rule.Type]) { self.rules = rules() }
     public init(_ rule: any Rule.Type) { self.rules = [rule] }
     public init(_ rules: [any Rule.Type]) { self.rules = rules }
 

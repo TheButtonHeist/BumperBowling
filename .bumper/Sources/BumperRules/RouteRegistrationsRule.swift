@@ -2,16 +2,14 @@ import BumperBowlingCore
 import SwiftSyntax
 
 public struct RouteRegistrationsRule: RepositoryRule {
-    public var configuration = RuleSettings<Self>()
     public static let metadata = RuleMetadata(id: "routes.registration", summary: "Each AppRoute case has exactly one bare registration")
-    public init() {}
 
     public struct FileInfo: Sendable {
         let cases: [SyntaxMatch<EnumCaseElementSyntax>]
         let registrations: [String]
     }
 
-    public var body: RepositoryCheck<FileInfo> {
+    public static var body: RepositoryCheck<FileInfo> {
         Rules.repository(scope: .files(["Sources/App/Routes.swift"]), collect: { file in
             let cases = SyntaxQuery<EnumDeclSyntax>().filter { $0.name == "AppRoute" }.matches(in: file).flatMap { route in
                 SyntaxQuery<EnumCaseDeclSyntax>().members(of: route).flatMap { member in
@@ -28,11 +26,10 @@ public struct RouteRegistrationsRule: RepositoryRule {
             return FileInfo(cases: cases, registrations: registrations)
         }, check: { file, inventory in
             let counts = Dictionary(grouping: inventory.flatMap(\.registrations), by: { $0 }).mapValues(\.count)
-            return inventory.flatMap(\.cases).filter { $0.file.path == file.path }.compactMap { route in
+            for route in inventory.flatMap(\.cases).filter({ $0.file.path == file.path }) {
                 let name = route.node.name.text
                 let count = counts[name, default: 0]
-                guard count != 1 else { return nil }
-                return route.failure(message: "\(name) needs exactly one registration; found \(count)")
+                Rules.require(count == 1, at: route, message: "\(name) needs exactly one registration; found \(count)")
             }
         })
     }

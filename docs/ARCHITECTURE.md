@@ -7,6 +7,8 @@ runtime. SwiftSyntax supplies the source tree and syntax node types.
 Repository Swift package
   BumperProject -> named SyntaxRule / RepositoryRule types
                          |
+                  private generic native adapters
+                         |
   syntax queries -> policy body -> located RuleFailure values
                          |
   SwiftLint configuration, collection, validation, and reporting
@@ -16,14 +18,15 @@ Repository Swift package
 
 ## Ownership
 
-Bumper owns the readable policy vocabulary, repository-relative scopes,
+Bumper owns the check builders, typed query vocabulary, repository-relative scopes,
 diagnostic construction, paired fixture support, package starter, commands,
 and input and process bounds.
 
 SwiftLint owns cached parsing, native rule execution, per-rule cross-file
 storage, disable directives, severity types, and standard reporting. Every DSL
-rule has its own native rule type and identifier. Native rules can be registered
-alongside DSL rules.
+rule has its own native adapter specialization and identifier. Authors declare
+static metadata and a builder body; configuration and initialization stay inside
+the adapter. Native rules can be registered alongside DSL rules.
 
 SwiftPM owns dependency resolution, compilation, and build reuse. The committed
 `.bumper/Package.swift` is the only package mode. There is no generated runner

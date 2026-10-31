@@ -15,12 +15,12 @@ public enum BumperRunner {
         }, uniquingKeysWith: { first, _ in first })
         var identifiers: Set<String> = []
         var settings: [String: Any] = [:]
-        var definitions: [String: any BumperRule] = [:]
+        var definitions: [String: any NativeBumperRule] = [:]
         for rule in rules {
             guard identifiers.insert(rule.identifier).inserted else {
                 throw BumperError("Duplicate rule identifier: \(rule.identifier)")
             }
-            if let type = rule as? any BumperRule.Type {
+            if let type = rule as? any NativeBumperRule.Type {
                 let values = ["repository_root": root.standardizedFileURL.path]
                 let definition = try type.init(configuration: values)
                 definitions[rule.identifier] = definition

@@ -4,15 +4,16 @@
 
 **Make your repository’s review conventions executable.**
 
-Write them in Swift. Test them with examples. Run them before review.
+Build your policies in Swift. Run them before review.
 
 Every feature view needs a matching preview. Explicit coding keys cover stored
 fields. Each route has one registration. These decisions are settled, but they
 still return to code review.
 
 Bumper Bowling gives them a readable Swift DSL, built on SwiftLintFramework and
-SwiftSyntax. Your repository owns the rules and their examples. SwiftLint runs
-each rule and reports the failures.
+SwiftSyntax. Your repository owns the policy. Builders compose the checks.
+Typed queries select the syntax, and ordinary Swift handles the details.
+SwiftLint runs each rule and reports the failures.
 
 You define the lane. The bumpers catch changes that leave it.
 
@@ -21,28 +22,26 @@ You define the lane. The bumpers catch changes that leave it.
 ```swift
 import BumperBowlingCore
 
-struct SwiftUIPreviewRule: SyntaxRule {
-    var configuration = RuleSettings<Self>()
+enum SwiftUIPreviewRule: SyntaxRule {
     static let metadata = RuleMetadata(
         id: "app.swiftui_preview",
         summary: "Each feature view has a matching preview in the same file"
     )
 
-    var body: SyntaxCheck {
-        Rules.forbid(
-            structs().inheriting("View").without(inSameFile: { view in
-                macroExpansions().named("Preview")
-                    .containing(functionCalls().named(view.name))
-            }),
-            scope: .under("Sources/Features")
-        ) { view in
-            "\(view.name) needs a #Preview that constructs \(view.name)"
+    static var body: SyntaxCheck {
+        Rules.forEach(structs().inheriting("View"), scope: .under("Sources/Features")) { view in
+            Rules.require(
+                inSameFile: macroExpansions().named("Preview")
+                    .containing(functionCalls().named(view.name)),
+                at: view,
+                message: "\(view.name) needs a #Preview that constructs \(view.name)"
+            )
         }
     }
 }
 ```
 
-The rule selects view structs that lack a preview containing their constructor.
+The builder selects each view struct and requires a preview that constructs it.
 A preview for another view, a constructor outside a preview, or a preview in
 another file cannot satisfy it.
 
@@ -65,14 +64,15 @@ constructor name. It does not resolve aliases or compiler identity.
 
 ## Small rules. Full Swift when you need it.
 
-The DSL provides queries, file scopes, and useful diagnostic locations.
-Ordinary Swift supplies the policy logic.
+A rule body combines checks. Use conditions, loops, and helper functions to
+express the convention. Each requirement names the declaration to report.
+Typed queries keep the source location and give you access to SwiftSyntax.
 
 | Convention | Building blocks |
 | --- | --- |
-| A view has a matching preview | `Rules.forbid`, same-file and descendant queries |
-| Explicit keys cover direct stored fields | `Rules.each`, direct-member queries, ordinary Swift sets |
-| Each route has one registration across files | `Rules.repository`, typed per-file collection |
+| A view has a matching preview | `Rules.forEach`, `Rules.require`, same-file and descendant queries |
+| Explicit keys cover direct stored fields | Nested builders, direct-member queries, ordinary Swift sets |
+| Each route has one registration across files | `Rules.repository`, typed collection, a validation builder |
 | A repository-specific syntax convention | `SyntaxQuery<Node>` for any SwiftSyntax node, or a visitor inside `Rules.files` |
 
 Each DSL rule is a distinct SwiftLint rule, with its own identifier. SwiftLint
@@ -126,28 +126,6 @@ bumper test .
 bumper lint .
 ```
 
-## Prove the convention with examples
-
-The starter includes paired fixtures evaluated through the same rule type:
-
-```swift
-let harness = RuleTestHarness(SwiftUIPreviewRule.self)
-let passing = try harness.evaluate([
-    .swift("Sources/Features/DocumentView.swift", source: """
-    struct DocumentView: View {}
-    #Preview { DocumentView() }
-    """),
-])
-#expect(passing.isEmpty)
-```
-
-The failing example asserts the finding count, identifier, path, location,
-severity, and repair message. The [complete starter test](Sources/BumperBowlingCore/Starter/Tests/BumperRulesTests/SwiftUIPreviewRuleTests.swift)
-includes the near misses too.
-
-The public harness uses SwiftLint’s execution path. It supports named files,
-multiple files, and ordinary Swift Testing assertions.
-
 ## Keep the rule with the decision
 
 Commit `.bumper`’s package, rules, tests, and lockfile. Review them together.
@@ -164,6 +142,10 @@ recomputes findings on every run. It does not persist violation results.
 To share conventions, export public rule types from a named Swift package.
 Other repositories import that package and register the rules they want.
 There is no separate rule registry or distribution format.
+
+The starter includes [passing and failing examples](Sources/BumperBowlingCore/Starter/Tests/BumperRulesTests/SwiftUIPreviewRuleTests.swift)
+run through the public test harness and SwiftLint. Use them to preserve the
+meaning of the convention as its implementation changes.
 
 Keep each convention small and give its diagnostic a clear repair. When a
 decision changes, change or delete the rule and its examples together.

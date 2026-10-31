@@ -19,6 +19,8 @@ public struct BumperProject: Sendable {
 
 @resultBuilder
 public enum RuleSetBuilder {
+    public static func buildExpression<Author: SyntaxRule>(_ rule: Author.Type) -> [any Rule.Type] { [NativeSyntaxRule<Author>.self] }
+    public static func buildExpression<Author: RepositoryRule>(_ rule: Author.Type) -> [any Rule.Type] { [NativeRepositoryRule<Author>.self] }
     public static func buildExpression(_ rule: any Rule.Type) -> [any Rule.Type] { [rule] }
     public static func buildBlock(_ rules: [any Rule.Type]...) -> [any Rule.Type] { rules.flatMap { $0 } }
     public static func buildArray(_ rules: [[any Rule.Type]]) -> [any Rule.Type] { rules.flatMap { $0 } }

@@ -1,31 +1,48 @@
 # Author a repository convention
 
-Start with a repeated review comment and a clear repair. Describe the passing
-and failing examples before writing the predicate.
+Start with a repeated review comment and a clear repair. State which declarations
+it concerns, where it applies, and what must hold. Build that policy in Swift.
 
-Bumper is a Swift DSL over SwiftLintFramework and SwiftSyntax. Each authored
-rule becomes a distinct native SwiftLint rule. No umbrella rule hides other
-rules or calls the old Bumper evaluator.
+Bumper supplies queries, builders, and source locations. SwiftLintFramework owns
+execution, cached parsing, collection, disable directives, and reporting.
 
-## Choose the shape
+## Build the rule
 
-- Use `SyntaxRule` and `Rules.forbid` to reject selected syntax matches.
-- Use `Rules.each` when each selected declaration needs its own check.
-- Use `Rules.files` for arbitrary SwiftSyntax or visitor logic in one file.
-- Use `RepositoryRule` and `Rules.repository` for relationships across files.
+A `SyntaxRule` declares static `metadata` and a static `body: SyntaxCheck`.
+The body is a builder. The [starter](../Sources/BumperBowlingCore/Starter/Sources/BumperRules/SwiftUIPreviewRule.swift)
+selects each feature view with `Rules.forEach` and requires a matching preview.
 
-Each rule declares `metadata`, a `configuration = RuleSettings<Self>()`, and a
-`body`. `RuleSettings` carries the repository root through SwiftLint’s native
-configuration. The rule’s reviewed Swift source defines policy and severity.
+Use these operations:
 
-The [starter](../Sources/BumperBowlingCore/Starter/Sources/BumperRules/SwiftUIPreviewRule.swift)
-shows a complete same-file rule. Exported rule types need public members and
-`public init()` so another Swift package can register them.
+- `Rules.forEach(query, scope:)` builds checks for each typed match.
+- `Rules.require(condition, at:message:)` reports an unmet condition at a match.
+- `Rules.require(inSameFile:at:message:)` requires a companion from the same syntax tree.
+- `Rules.forbid(query, scope:)` rejects each matching occurrence.
+- `Rules.each` and `Rules.files` accept ordinary callbacks returning `[RuleFailure]`.
+
+A requirement's `at:` argument sets its diagnostic location. It does not select
+subjects or hide findings outside the rule scope.
+
+Sibling checks all execute. They can support several aspects of one convention.
+Keep unrelated conventions in separate rule types with separate identifiers.
+
+Use local constants, conditions, optional bindings, switches, and loops inside
+the builder. Use ordinary Swift helpers for algorithms that need `guard`, early
+return, or throwing control flow. A helper can return one `SyntaxCheck`; give it
+`@CheckBuilder` if it composes several checks.
+
+The [direct-member example](../.bumper/Sources/BumperRules/ExplicitCodingKeysRule.swift)
+uses an optional binding, sets, and nested loops. It checks explicit CodingKeys
+coverage while allowing compiler synthesis when no keys are declared.
+
+Public rule types need public metadata and bodies. They do not need native
+configuration storage or an initializer. Bumper supplies a distinct SwiftLint
+adapter for each type.
 
 ## Query the existing tree
 
 `SyntaxQuery<Node>` accepts any SwiftSyntax node type. It returns typed matches
-with `node` and `file`. `file.syntax` is SwiftLint’s cached tree. Never reparse it.
+with `node` and `file`. `file.syntax` is SwiftLint's cached tree. Never reparse it.
 
 Common query roots include `structs()`, `functions()`, `initializers()`,
 `variables()`, `typeAliases()`, `functionCalls()`, and `macroExpansions()`.
@@ -39,8 +56,8 @@ Queries compose with `filter`, `compactMap`, `containing`, `without(inSameFile:)
 `within`, and `excluding`. A custom `SyntaxPattern` can supply its own matches.
 
 `matches(within:)` selects strict descendants. `members(of:)` selects direct
-members and excludes declarations in nested types. Matches keep source identity,
-so an unrelated file cannot satisfy a same-file relationship.
+members and excludes declarations in nested types. Same-file requirements check
+both the file tree and the matched node's tree, including custom query results.
 
 Use `variable.isMutable`, `variable.bindingNames`, and
 `variable.storedBindingNames` for common binding questions.
@@ -49,7 +66,9 @@ Property observers count as stored bindings.
 
 For custom logic, inspect `match.node` or walk `file.syntax` with a
 `SyntaxVisitor`. Return `match.failure(message:)` or
-`file.failure(at:message:)` to retain the source location.
+`file.failure(at:message:)` to retain the source location. The context also
+provides the repository-relative `path`, canonical repository `root`, original
+`source`, and location converter.
 
 ## Select subjects separately from collection
 
@@ -64,32 +83,26 @@ RuleScope.repository.excluding(.under("Sources/Generated"))
 A custom scope can inspect `SourceFileContext`. `.under` matches path components,
 so `Sources/FeatureTests` does not fall under `Sources/Features`.
 
-A repository rule collects typed `FileInfo` from every included file. Its
-scope selects the files to check and the locations it can report. SwiftLint
-stores that collection and completes collection before validation.
+Put subject scope on the outer selection. Paths in that check structure are
+validated before execution even when nothing matches. A per-match callback does
+not run, or contribute scope declarations, for an absent match.
+
+A `RepositoryRule` declares typed `FileInfo` and a static
+`body: RepositoryCheck<FileInfo>`. Its `Rules.repository` collection closure is
+ordinary Swift. Its validation closure is a check builder, so it can loop over
+collected subjects and emit requirements.
+
+Collection includes every scanned file. Scope selects the files to check and
+the locations the rule can report. SwiftLint completes collection before
+validation. Evidence from another directory can satisfy a scoped subject.
 
 A repository rule with no selected subject fails before validation. A DSL
-finding anchored outside the subject scope also fails. Neither condition becomes
-a passing lint result.
+finding outside the rule's subject scope also fails. Neither becomes a passing
+lint result. Composed file checks bound that rule scope by their union.
 
 See the [route example](../.bumper/Sources/BumperRules/RouteRegistrationsRule.swift).
-It keeps collection and subject selection explicit without a shared fact engine.
-
-## Test the real rule
-
-Use `RuleTestHarness(MyRule.self)` from `BumperBowlingTestSupport`. Evaluate paired
-passing and failing arrays of `.swift(path, source:)` fixtures. Keep one harness
-for the pair.
-
-For passing examples, assert zero findings. For failing examples, assert the
-count and use `ViolationMatcher` to assert the ID, path, line, column, severity,
-and reason. Test near misses that could satisfy the wrong relationship.
-
-The harness writes fixtures under an isolated temporary root and uses the same
-SwiftLint execution path as the repository runner. It normalizes diagnostic
-paths and removes the temporary files. It does not change the process directory.
-
-Run these tests with `bumper test .`, or use ordinary `swift test --package-path .bumper`.
+It uses ordinary counts to require exactly one registration for each route.
+There is no shared fact engine.
 
 ## Register and share rules
 
@@ -101,22 +114,46 @@ BumperProject(included: ["Sources"], excluded: ["Sources/Generated"]) {
 }.main()
 ```
 
-The builder supports conditions, loops, and distinct native SwiftLint rule types.
+The project builder supports conditions, loops, and native SwiftLint rule types.
 Duplicate identifiers fail. One rule type has one stable identifier. Bumper does
 not synthesize runtime types for closure instances with different IDs.
 
-For distribution, export rule types from a named Swift package. Add that library
-as a dependency of another repository’s runner and tests. Register the selected
-types there. Use a distinct module name if that repository also has local rules.
+To share conventions, export public rule types from a named Swift package.
+Add that library as a dependency of another repository's runner and tests.
+Register only the selected types. Use a distinct module name if that repository
+also has local rules. Typed instance options are not part of this API.
+
+## Preserve the meaning with examples
+
+Use `RuleTestHarness(MyRule.self)` from `BumperBowlingTestSupport`. A harness can
+also use the project builder syntax to register several authored or native rules:
+
+```swift
+let harness = RuleTestHarness {
+    SwiftUIPreviewRule.self
+    ExplicitCodingKeysRule.self
+}
+```
+
+Evaluate passing and failing arrays of `.swift(path, source:)` fixtures through
+the same harness. Assert zero findings for passing examples. For failing examples,
+assert the count and use `ViolationMatcher` for identity, path, location, severity,
+and reason. Include near misses that could satisfy the wrong relationship.
+
+The harness writes fixtures under an isolated temporary root and uses SwiftLint's
+execution path. It normalizes findings and removes temporary files. It does not
+change the process directory or introduce another evaluator.
+
+Run these tests with `bumper test .`, or `swift test --package-path .bumper`.
 
 ## Limits
 
-These are syntax checks. A written conformance can differ from compiler type
-identity. Matching a call’s spelling cannot establish its resolved declaration.
+These are syntax checks. Written conformances can differ from compiler type
+identity. A call's spelling does not establish its resolved declaration.
 Aliases, indirect calls, extensions, and synthesized declarations need explicit
 policy decisions. Do not describe these checks as compiler-backed analysis.
 
-Rule predicates are nonthrowing, matching SwiftLint’s rule API. Use input
-preflight for configuration failures. Do not catch an analysis error and return
-an empty finding list. Native `SourceKitFreeRule` remains available when the DSL
-does not improve a rule.
+Rule bodies and callbacks are nonthrowing, matching SwiftLint's rule API.
+Configuration and input preflight failures stop the host. Do not catch an
+analysis error and return an empty finding list. Native `SourceKitFreeRule`
+remains available when the DSL does not improve a rule.
