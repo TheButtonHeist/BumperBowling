@@ -1,11 +1,11 @@
 # SwiftSyntax Surface
 
-Bumper Bowling validates declared codebase shape against selected SwiftSyntax nodes.
+Bumper Bowling rules can inspect the full SwiftSyntax tree and shared derived facts.
+Each included Swift file is parsed once. Rules reuse that syntax through
+`SourceFileContext`, queries, and fact providers.
 
-SwiftSyntax can represent the full Swift source tree. Bumper Bowling does not
-copy that tree and does not expose an infinitely configurable query language. It
-records source-accurate syntax nodes plus selected computed facts, projects them
-into `ArchitectureGraph`, then runs lean mathematical checks over that graph.
+`ArchitectureGraph` adds optional component ownership and dependency edges.
+Generic syntax rules do not require architecture declarations.
 
 Bumper Bowling also does not duplicate SwiftSyntax's type universe. The raw syntax vocabulary is SwiftSyntax's own `SyntaxKind`; richer local facts are computed as extensions over concrete SwiftSyntax nodes through `node.bumper`.
 
@@ -14,7 +14,8 @@ Bumper Bowling also does not duplicate SwiftSyntax's type universe. The raw synt
 ### Files
 
 - Relative file path.
-- Owning component, derived from configured path ownership.
+- Optional owning component, derived from configured path ownership.
+- Included Swift files remain available to rules without an owner.
 
 ### Imports
 
@@ -24,10 +25,13 @@ Bumper Bowling also does not duplicate SwiftSyntax's type universe. The raw synt
 
 ### Declarations
 
-- Syntactic `public` and `open` declarations.
-- Declaration kind: actor, class, enum, function, protocol, struct, variable.
-- Declaration name.
-- Attribute names attached to public declarations.
+- Declaration contracts, names, attributes, lexical context, and explicit signature types.
+- Explicit access and lexical access defaults, including public extension members.
+- Effective access from same-file evidence, or an explicit unresolved result.
+
+The ownership inventory includes initializers and subscripts. These are syntax
+facts, not a compiler-validated public API surface. See the
+[fact catalog](built-ins/facts.md) for coverage and limits.
 
 ### Stored Properties
 
@@ -98,11 +102,12 @@ DoesNot(
 )
 ```
 
-Built-in syntax assertions are still projected-fact checks. They evaluate
-observed syntax nodes and their immediate recorded context rather than executing
-arbitrary tree queries. For repository-specific tree walks, use
-`CustomSyntaxRule`, which receives a `SourceFileContext` with raw
-`SourceFileSyntax`.
+These assertions inspect projected facts. For queries over real syntax nodes,
+use `SyntaxQuery` with `Rules.forbid`, cardinality assertions, or `Rules.each`.
+`Rules.files` exposes each `SourceFileContext`, including its parsed
+`SourceFileSyntax`. `Rules.visitor` supports a custom SwiftSyntax visitor.
+
+The [rule recipes](RULE_RECIPES.md) show these APIs with passing and failing fixtures.
 
 ### Computed SwiftSyntax Views
 
@@ -135,7 +140,7 @@ The configuration supplies the facts SwiftSyntax cannot know by itself:
 
 ## Graph Projection
 
-`ArchitectureGraph` is the evidence surface rules operate on. It currently contains:
+`ArchitectureGraph` is the optional projection for component policies. It contains:
 
 - source files
 - component nodes
@@ -144,7 +149,7 @@ The configuration supplies the facts SwiftSyntax cannot know by itself:
 
 Source files carry their observed imports, declarations, stored properties, enum names, imperative constructs, and syntax kind catalog.
 
-Rules operate on that projection with deterministic operations: path scope, set membership, graph edge checks, and cycle detection.
+Architecture rules operate on that projection with deterministic operations: path scope, set membership, graph edge checks, and cycle detection.
 
 Semantic shorthand does not add hidden facts. It composes `SourceFactRule` atoms, then lowers into these same graph operations.
 
