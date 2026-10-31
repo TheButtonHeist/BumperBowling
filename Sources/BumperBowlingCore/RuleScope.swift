@@ -1,67 +1,34 @@
-import Foundation
-
-/// Which files a rule evaluates over. Built-in scopes are conveniences over
-/// one open predicate initializer, not a closed taxonomy.
+/// File selection uses repository-relative paths, independent of collection.
 public struct RuleScope: Sendable {
-    private let predicate: @Sendable (SourceFileDescriptor) -> Bool
+    private let paths: [String]
+    private let predicate: @Sendable (SourceFileContext) -> Bool
 
-    public init(_ includes: @escaping @Sendable (SourceFileDescriptor) -> Bool) {
-        self.predicate = includes
+    public init(_ predicate: @escaping @Sendable (SourceFileContext) -> Bool) {
+        self.init(paths: [], predicate: predicate)
+    }
+
+    private init(paths: [String], predicate: @escaping @Sendable (SourceFileContext) -> Bool) {
+        self.paths = paths
+        self.predicate = predicate
     }
 
     public static let repository = RuleScope { _ in true }
+    public static func under(_ path: String) -> Self {
+        Self(paths: [path]) { $0.path == path || $0.path.hasPrefix(path + "/") }
+    }
+    public static func files(_ paths: Set<String>) -> Self {
+        Self(paths: paths.sorted()) { paths.contains($0.path) }
+    }
+    public func excluding(_ other: Self) -> Self {
+        Self(paths: paths + other.paths) { self.includes($0) && !other.includes($0) }
+    }
+    public func includes(_ file: SourceFileContext) -> Bool { predicate(file) }
 
-    // ponytail: production == not under Tests/; a configured production-root
-    // scope can replace this when a repository needs a different split.
-    public static let productionSources = RuleScope { file in
-        !StringMatcher.prefix("Tests/").matches(file.path)
+    static func union(_ scopes: [Self]) -> Self {
+        Self(paths: scopes.flatMap(\.paths)) { file in scopes.contains { $0.includes(file) } }
     }
 
-    public static func component<Key: ComponentKey>(_ component: Key) -> RuleScope {
-        self.component(component.componentID)
-    }
-
-    public static func component(_ component: ComponentID) -> RuleScope {
-        RuleScope { file in
-            file.component == component
-        }
-    }
-
-    public static func under(_ path: RelativePathPrefix) -> RuleScope {
-        RuleScope { file in
-            path.contains(file.path)
-        }
-    }
-
-    public static func files(_ paths: Set<RelativeFilePath>) -> RuleScope {
-        RuleScope { file in
-            paths.contains(file.path)
-        }
-    }
-
-    public func union(_ other: RuleScope) -> RuleScope {
-        RuleScope { file in
-            self.includes(file) || other.includes(file)
-        }
-    }
-
-    public func intersecting(_ other: RuleScope) -> RuleScope {
-        RuleScope { file in
-            self.includes(file) && other.includes(file)
-        }
-    }
-
-    public func excluding(_ other: RuleScope) -> RuleScope {
-        RuleScope { file in
-            self.includes(file) && !other.includes(file)
-        }
-    }
-
-    public func includes(_ file: SourceFileDescriptor) -> Bool {
-        predicate(file)
-    }
-
-    func includes(_ file: SourceFileContext) -> Bool {
-        includes(file.descriptor)
+    func validate() throws {
+        for path in paths { try RepositoryScanner.validateRelativePath(path) }
     }
 }

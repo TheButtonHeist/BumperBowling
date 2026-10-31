@@ -1,70 +1,25 @@
-import BumperBowlingCore
+import SwiftLintFramework
 
-/// A pure predicate over one canonical violation. Every expectation is
-/// optional; an omitted field matches anything. Framework-neutral: assert on
-/// the returned `Bool` from Swift Testing or XCTest alike.
 public struct ViolationMatcher: Sendable {
-    private let id: RuleID?
-    private let path: RelativeFilePath?
-    private let location: SourcePosition?
-    private let message: StringMatcher?
-    private let observed: StringMatcher?
-    private let expectation: StringMatcher?
-    private let details: [EvidenceDetail]
+    private let id: String
+    private let path: String
+    private let line: Int
+    private let column: Int
+    private let severity: ViolationSeverity
+    private let reason: String
 
-    public init(
-        id: RuleID? = nil,
-        path: RelativeFilePath? = nil,
-        location: SourcePosition? = nil,
-        message: StringMatcher? = nil,
-        observed: StringMatcher? = nil,
-        expectation: StringMatcher? = nil,
-        details: [EvidenceDetail] = []
-    ) {
+    public init(id: String, path: String, line: Int, column: Int, severity: ViolationSeverity = .error, reason: String) {
         self.id = id
         self.path = path
-        self.location = location
-        self.message = message
-        self.observed = observed
-        self.expectation = expectation
-        self.details = details
+        self.line = line
+        self.column = column
+        self.severity = severity
+        self.reason = reason
     }
 
-    public func matches(_ violation: RuleViolation) -> Bool {
-        if let id, violation.rule.id != id {
-            return false
-        }
-        if let path, violation.path != path {
-            return false
-        }
-        if let location, violation.location != location {
-            return false
-        }
-        if let message, !message.matches(violation.message) {
-            return false
-        }
-        if let observed, !observed.matches(violation.evidence?.observed ?? "") {
-            return false
-        }
-        if let expectation, !expectation.matches(violation.evidence?.expectation ?? "") {
-            return false
-        }
-        return details.allSatisfy { detail in
-            violation.evidence?.details.contains(detail) == true
-        }
-    }
-}
-
-extension RuleReport {
-    /// The violations satisfying one pure matcher.
-    public func violations(matching matcher: ViolationMatcher) -> [RuleViolation] {
-        violations.filter { violation in
-            matcher.matches(violation)
-        }
-    }
-
-    /// Whether any violation satisfies the matcher.
-    public func contains(_ matcher: ViolationMatcher) -> Bool {
-        !violations(matching: matcher).isEmpty
+    public func matches(_ violation: StyleViolation) -> Bool {
+        violation.ruleIdentifier == id && violation.location.file == path
+            && violation.location.line == line && violation.location.character == column
+            && violation.severity == severity && violation.reason == reason
     }
 }

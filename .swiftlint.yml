@@ -6,6 +6,7 @@ included:
 
 excluded:
   - .build
+  - .bumper/.build
   - .swiftpm
   - DerivedData
 
@@ -21,39 +22,6 @@ disabled_rules:
   - type_body_length
 
 identifier_name:
-  excluded:
-    - id
-    - ui
-    - Included
-    - Excluded
-    - Architecture
-    - Assertions
-    - CustomRules
-    - Component
-    - RequireSyntax
-    - DisallowSyntax
-    - Owns
-    - MayDependOn
-    - DoesNotDependOn
-    - MayUse
-    - DoesNotUse
-    - Applies
-    - Declare
-    - ContainSyntax
-    - ContainSyntaxNode
-    - Does
-    - DoesNot
-    - Declares
-    - Requires
-    - RequiresScoped
-    - Disallows
-    - NoDirectStringMatching
-    - ApplyAssertions
-    - DependencyBoundaries
-    - SingleOwner
-    - SourceCoverage
-    - AcyclicDeclaredDependencies
-    - Paths
-    - Modules
+  excluded: [id]
 
-reporter: "xcode"
+reporter: xcode

@@ -1,20 +1,18 @@
-# Agent Lanes
+# Write useful repository conventions
 
-- Bumper Bowling keeps agents in their lane by validating changes against the declared codebase shape.
-- Treat every violation as a scorecard entry: observed graph fact, declared lane, mismatch.
-- Fix the code first; update the lane only when the intended architecture actually changed.
-- Keep changes scoped to the component named by the task.
-- Update `BumperBowling.swift` only when the architectural contract intentionally changes.
-- Update `docs/ARCHITECTURE_SNAPSHOT.md` when command flow, core pipeline types, or rule IDs change.
-- Run `BUMPER_RUNNER_BUILD_CONFIGURATION=debug swift test` before reporting implementation work complete; dedicated policy tests lock the production `release` default.
-- Run `swift run bumper lint .` before shipping changes that affect config loading, scanning, or linting.
-- Run `swiftlint lint --strict` when SwiftLint is available.
-- Make sure Bumper Bowling's self-lint product test still passes after architectural model or rule changes.
-- Do not make `BumperBowlingCore` depend on the CLI target.
-- Keep `BumperBowling` dumb. It is a shipped interface over the core engine, not a separate engine.
-- Preserve strict concurrency settings.
-- Keep parsing SwiftSyntax-first. Use SwiftSyntax/SwiftParser for Swift parsing rather than regular expressions.
-- Parse strings into domain types at boundaries; do not pass raw strings through core architecture logic.
-- Use explicit enum state machines when parser progress has state; keep stateless source-fact collection as direct projection over syntax.
-- Do not introduce stored properties explicitly typed as `Any` or broad existentials in guarded scopes.
-- Keep the tool tiny; avoid generated accessors, dynamic lookup, and nonessential framework code.
+Start with a repeated review decision that Swift permits. State the scope,
+observation, mismatch, and repair. Do not add a rule merely to prohibit syntax.
+
+Read the repository’s `.bumper` package, existing rule tests, and
+[authoring guide](RULE_AUTHORING.md). Reuse its queries and vocabulary.
+
+Keep policy in the Swift DSL. Register each named rule explicitly. Reuse parsed
+syntax and native cross-file collection. Do not add a parser, generic fact cache,
+wrapper engine, or configuration framework for one convention.
+
+Use paired public-harness fixtures. Passing examples must produce zero findings.
+Failing examples must assert count, ID, path, location, severity, and message.
+Include near misses and legitimate exceptions.
+
+Describe syntax limits honestly. Keep runtime tests for runtime behavior.
+Run `bumper test .` and `bumper lint .` before review.

@@ -1,58 +1,42 @@
 import Foundation
-import SwiftParser
+import SwiftLintFramework
 import SwiftSyntax
 
-/// One parsed source file: typed descriptor, source text, syntax, location
-/// conversion, and failure construction.
+/// Repository-relative identity over SwiftLint's cached syntax. Never parses source.
 public struct SourceFileContext: Sendable {
-    public let descriptor: SourceFileDescriptor
-    public let source: String
+    public let root: URL
+    public let file: SwiftLintFile
+    public let path: String
     public let syntax: SourceFileSyntax
+    public let source: String
     public let locationConverter: SourceLocationConverter
 
-    /// Parses the source exactly once.
-    public init(descriptor: SourceFileDescriptor, source: String) {
-        let syntax = Parser.parse(source: source)
-        self.descriptor = descriptor
-        self.source = source
+    public init(file: SwiftLintFile, root: URL) {
+        let root = root.resolvingSymlinksInPath().standardizedFileURL
+        self.root = root
+        self.file = file
+        self.source = file.contents
+        let syntax = file.syntaxTree
         self.syntax = syntax
-        self.locationConverter = SourceLocationConverter(fileName: descriptor.path.rawValue, tree: syntax)
+        let prefix = root.path + "/"
+        let absolute = file.path.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardizedFileURL.path } ?? ""
+        let path = absolute.hasPrefix(prefix) ? String(absolute.dropFirst(prefix.count)) : absolute
+        self.path = path
+        self.locationConverter = file.locationConverter
     }
 
-    /// Missing source text is an explicit failure, not a skipped file.
-    init(file: SourceFileFacts) throws {
-        guard let source = file.source else {
-            throw RuleEvaluationError.missingSource(file.path)
-        }
-        self.init(
-            descriptor: SourceFileDescriptor(path: file.path, component: file.component),
-            source: source
-        )
+    public func failure(at node: some SyntaxProtocol, message: String) -> RuleFailure {
+        let position = locationConverter.location(for: node.positionAfterSkippingLeadingTrivia)
+        return RuleFailure(location: Location(file: file.path, line: position.line, character: position.column), message: message)
     }
+}
 
-    public var path: RelativeFilePath {
-        descriptor.path
-    }
+public struct RuleFailure: Sendable {
+    public let location: Location
+    public let message: String
 
-    public var component: ComponentID? {
-        descriptor.component
-    }
-
-    public func position(of node: some SyntaxProtocol) -> SourcePosition {
-        let sourceLocation = locationConverter.location(for: node.positionAfterSkippingLeadingTrivia)
-        return SourcePosition(line: sourceLocation.line, column: sourceLocation.column)
-    }
-
-    public func failure(
-        at node: some SyntaxProtocol,
-        message: String,
-        evidence: ViolationEvidence? = nil
-    ) -> RuleFailure {
-        RuleFailure(
-            path: path,
-            location: position(of: node),
-            message: message,
-            evidence: evidence
-        )
+    public init(location: Location, message: String) {
+        self.location = location
+        self.message = message
     }
 }
