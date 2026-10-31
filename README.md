@@ -190,16 +190,13 @@ process handling, and cache safety.
 
 ## Get started
 
-These examples use development APIs newer than `0.6.0`. The dependency below
-tracks `main` until a release includes them.
-
 Add the package to `Package.swift`:
 
 ```swift
 dependencies: [
     .package(
         url: "https://github.com/TheButtonHeist/BumperBowling.git",
-        branch: "main"
+        from: "0.7.0"
     )
 ]
 ```
@@ -273,8 +270,10 @@ bumper explain <path>          Show facts for one file.
 ## Development
 
 ```bash
+swiftlint lint --strict
 BUMPER_RUNNER_BUILD_CONFIGURATION=debug swift test
-swift run bumper lint .
+BUMPER_RUNNER_BUILD_CONFIGURATION=debug swift run bumper test .
+BUMPER_RUNNER_BUILD_CONFIGURATION=debug swift run bumper lint .
 ```
 
 ## License

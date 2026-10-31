@@ -79,11 +79,6 @@ richer local checks use extensions on real nodes through `node.bumper`.
 
 Add graph facts only when they support an assertion Bumper Bowling can explain. Rules should be lean mathematical operations over nodes: path matching, set membership, graph edges, and cycles. Keep scorecards explainable: report the observed graph fact, the declared lane, and why they do not match.
 
-Rule evaluation is sequential in V1: one parse of each file, one memoized fact
-cache, rules in declaration order. A future parallel scheduler is sketched in
-[PARALLEL_RULE_GRAPH.md](PARALLEL_RULE_GRAPH.md); it must preserve this
-lifecycle and deterministic report ordering.
-
 Semantic shorthand names are not special engine concepts.
 `ComponentRequirement` composes `SourceFactRule` values, then `Requires(...)`
 applies scope and severity. Built-in requirement conveniences and
