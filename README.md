@@ -8,8 +8,8 @@
 
 Some decisions keep returning to code review.
 
-A value type needs matching in-place and value-returning operations. Tests need
-control over time. Manually synchronized types belong at a deliberate boundary.
+Every feature view needs a preview. Previews use sample data. Explicit coding keys
+cover stored fields. Live dependencies belong at the project’s boundary.
 
 The decisions are settled. People and agents still need reminders.
 
@@ -20,77 +20,55 @@ You define the lane. The bumpers catch changes that leave it.
 
 ## One rule, one useful failure
 
-Swift uses paired names such as `formUnion` and `union` for in-place and
-value-returning operations. This library chooses to provide both forms on its
-selected value types.
-
-This type compiles, but it supplies only the in-place operation:
+Take a familiar convention: every feature view needs a preview.
 
 ```swift
-struct Selection {
-    var elements: Set<Int> = []
-    mutating func formUnion(_ other: Self) { elements.formUnion(other.elements) }
+struct DocumentView: View {
+    var body: some View { Text("Document") }
 }
 ```
 
-A rule can require the corresponding method on the same struct:
+This view compiles. The project can require a preview too:
 
 ```swift
 import BumperBowlingCore
-import SwiftSyntax
 
-let valueOperationPairs = Rules.each(
-    structs(), id: "api.value_operations",
-    summary: "Selected value types offer matching in-place and value-returning union operations.",
-    scope: .under("Sources/Values")
-) { value in
-    let methods = value.node.memberBlock.members.compactMap { $0.decl.as(FunctionDeclSyntax.self) }
-    return methods.compactMap { method -> RuleFailure? in
-        let parameters = method.signature.parameterClause.parameters
-        guard method.name.text == "formUnion", method.modifiers.contains(where: { $0.name.text == "mutating" }),
-              parameters.count == 1, let parameter = parameters.first, parameter.type.trimmedDescription == "Self", parameter.firstName.text == "_",
-              method.signature.returnClause == nil else { return nil }
-        let hasCopy = methods.contains { candidate in
-            let inputs = candidate.signature.parameterClause.parameters
-            return candidate.name.text == "union"
-                && !candidate.modifiers.contains { ["mutating", "static", "class"].contains($0.name.text) }
-                && inputs.count == 1 && inputs.first?.firstName.text == parameter.firstName.text
-                && inputs.first?.type.trimmedDescription == "Self"
-                && candidate.signature.returnClause?.type.trimmedDescription == "Self"
-        }
-        return hasCopy ? nil : SyntaxMatch(node: method, file: value.file).failure(
-            message: "Provide union(_:) -> Self alongside formUnion(_:).",
-            evidence: ViolationEvidence(
-                observed: "formUnion(_:) has no matching value-returning union(_:)",
-                expectation: "a nonmutating instance method union(_ other: Self) -> Self on the same struct"
-            )
-        )
-    }
+let swiftUIPreviews = Rules.forbid(
+    structs().inheriting("View").without(inSameFile: { view in
+        macroExpansions().named("Preview")
+            .containing(functionCalls().named(view.name))
+    }),
+    id: "app.swiftui_preview",
+    summary: "Each feature view has a preview in the same file.",
+    scope: .under("Sources/Features")
+) { view in
+    "\(view.name) needs a #Preview that constructs \(view.name)."
 }
 ```
 
-Add the rule to `BumperBowling.swift`:
+The query selects view structs that lack a preview containing their constructor
+call in the same file. Add the rule to `BumperBowling.swift`:
 
 ```swift
 let bumper = BumperProject {
     Included { "Sources" }
-    Rules { valueOperationPairs }
+    Rules { swiftUIPreviews }
 }
 ```
 
 Then run `bumper lint .`:
 
 ```text
-Sources/Values/Selection.swift:3:5
-Provide union(_:) -> Self alongside formUnion(_:). (api.value_operations)
+Sources/Features/Document/DocumentView.swift:1:1
+DocumentView needs a #Preview that constructs DocumentView. (app.swiftui_preview)
 ```
 
-A method in a nested helper or another type cannot satisfy this requirement.
-The passing and failing fixtures also run with types together and in separate files.
+The failure points to the view and explains the repair. A preview for another
+view, a constructor call outside a preview, or a preview in another file cannot
+satisfy the rule.
 
-This policy builds on [Swift's naming guidance](https://www.swift.org/documentation/api-design-guidelines/#strive-for-fluent-usage).
-Requiring both operations is the library's choice. The rule checks written
-method shapes; it does not prove equivalent behavior or combine extensions.
+This example selects structs that explicitly inherit `View` and matches written
+constructor names. It does not resolve aliases or compiler type identity.
 
 ## The rule is yours
 
@@ -103,7 +81,9 @@ report something that does not belong.
 
 | Project convention | Expression |
 | --- | --- |
-| A value type offers matching in-place and value-returning operations | `Rules.each` over direct members |
+| Each feature view has a matching preview | A same-file relationship between syntax matches |
+| Previews use sample clients | A macro query containing selected calls |
+| Explicit coding keys cover stored fields | `Rules.each` with direct-member queries |
 | A required declaration count across selected files | `Rules.assert` with `counting: .repository` |
 | Each route has exactly one registration across files | `Rules.repository` with shared facts |
 | Unchecked concurrency conformances stay at a deliberate boundary | `Rules.forbid` over attributed type syntax |
@@ -142,25 +122,25 @@ and recurring component patterns:
 
 ```swift
 enum ProjectComponent: String, ComponentKey {
-    case values
-    case dependencies
+    case domain
+    case ui
 }
 
 let bumper = BumperProject {
     Included { "Sources" }
 
     Architecture(ProjectComponent.self) {
-        Component(.values) {
-            Owns("Sources/Values")
-            Modules("Values")
+        Component(.domain) {
+            Owns("Sources/Domain")
+            Modules("Domain")
             MayUse(.foundation)
         }
 
-        Component(.dependencies) {
-            Owns("Sources/Dependencies")
-            Modules("Dependencies")
-            MayDependOn(.values)
-            MayUse(.foundation)
+        Component(.ui) {
+            Owns("Sources/Features")
+            Modules("FeatureUI")
+            MayDependOn(.domain)
+            MayUse(.foundation, .swiftUI)
         }
     }
 
@@ -169,7 +149,7 @@ let bumper = BumperProject {
         SingleOwner(.error)
         SourceCoverage(.error)
         AcyclicDeclaredDependencies(.error)
-        valueOperationPairs
+        swiftUIPreviews
     }
 }
 ```

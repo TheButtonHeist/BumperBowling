@@ -10,13 +10,14 @@ struct RuleAuthoringRecipeTests {
         let passing = try harness.evaluate([
             SourceInput.swift("Sources/Features/Document/DocumentView.swift", source: """
             struct DocumentView: View {}
-            #Preview { DocumentView() }
+            struct OtherView: View {}
+            #Preview { DocumentView(); OtherView() }
             """),
             .swift("Sources/Other/BackgroundView.swift", source: "struct BackgroundView: View {}"),
         ])
         #expect(passing.violations.isEmpty)
         let failing = try harness.evaluate([
-            SourceInput.swift("Sources/Features/Document/DocumentView.swift", source: "struct DocumentView: View {}"),
+            SourceInput.swift("Sources/Features/Document/DocumentView.swift", source: "struct DocumentView: View {}\n#Preview { OtherView() }\nlet value = DocumentView()"),
             .swift("Sources/Features/Document/Preview.swift", source: "#Preview { DocumentView() }"),
         ])
         #expect(failing.violations.count == 1)
@@ -175,23 +176,16 @@ struct RuleAuthoringRecipeTests {
 
 private enum RecipeComponent: String, ComponentKey { case ui }
 
-private let swiftUIPreviews = Rules.each(
-    structs().inheriting("View"),
+private let swiftUIPreviews = Rules.forbid(
+    structs().inheriting("View").without(inSameFile: { view in
+        macroExpansions().named("Preview")
+            .containing(functionCalls().named(view.name))
+    }),
     id: "app.swiftui_preview",
     summary: "Each feature view has a preview in the same file.",
     scope: .under("Sources/Features")
 ) { view in
-    let previews = macroExpansions().named("Preview").matches(in: view.file)
-    let viewName = view.node.name.text
-    let hasPreview = previews.contains { preview in
-        preview.node
-            .descendants(of: FunctionCallExprSyntax.self)
-            .map(\.calleeName)
-            .contains(viewName)
-    }
-    return hasPreview ? [] : [view.failure(
-        message: "\(viewName) needs a #Preview that constructs \(viewName)."
-    )]
+    "\(view.name) needs a #Preview that constructs \(view.name)."
 }
 
 private struct RouteInventory: Sendable {

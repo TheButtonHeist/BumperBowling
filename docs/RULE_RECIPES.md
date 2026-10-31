@@ -23,7 +23,7 @@ The count fixtures live in
 Run them with:
 
 ```bash
-swift test --filter 'SwiftPracticeRecipeTests|RuleAuthoringRecipeTests|PatternAuthoringTests'
+swift test --filter 'SwiftPracticeRecipeTests|RuleAuthoringRecipeTests|RelatedRuleRecipeTests|QueryCompositionTests|PatternAuthoringTests'
 ```
 
 CI runs these tests through public imports and `RuleTestHarness`. Each pair
@@ -128,7 +128,7 @@ let valueOperationPairs = Rules.each(
     summary: "Selected value types offer matching in-place and value-returning union operations.",
     scope: .under("Sources/Values")
 ) { value in
-    let methods = value.node.memberBlock.members.compactMap { $0.decl.as(FunctionDeclSyntax.self) }
+    let methods = functions().members(of: value).map(\.node)
     return methods.compactMap { method -> RuleFailure? in
         let parameters = method.signature.parameterClause.parameters
         guard method.name.text == "formUnion", method.modifiers.contains(where: { $0.name.text == "mutating" }),
@@ -317,40 +317,110 @@ This recipe matches the explicit module spelling `UI`. It does not discover
 compiler build targets or infer dependencies from symbol use. Remove this rule
 if the project no longer separates UI imports by component.
 
-## An optional SwiftUI convention
+## Related syntax in three small rules
 
-`previewRuleHasPassingAndFailingFixtures` demonstrates a SwiftUI-specific policy.
-It accepts a preview in the view's file and ignores views outside the selected
-scope. A preview in another file does not satisfy the rule. The failing fixture
-reports the view declaration, with its rule ID, path, location, and repair message.
+These examples use the same selection, navigation, and reporting APIs at three
+levels. They add no custom visitor or second evaluator.
+
+### Each feature view has a preview
+
+```swift
+import BumperBowlingCore
+
+let swiftUIPreviews = Rules.forbid(
+    structs().inheriting("View").without(inSameFile: { view in
+        macroExpansions().named("Preview")
+            .containing(functionCalls().named(view.name))
+    }),
+    id: "app.swiftui_preview",
+    summary: "Each feature view has a preview in the same file.",
+    scope: .under("Sources/Features")
+) { view in
+    "\(view.name) needs a #Preview that constructs \(view.name)."
+}
+```
+
+`previewRuleHasPassingAndFailingFixtures` in
+[RuleAuthoringRecipeTests.swift](../Tests/BumperBowlingTestSupportTests/RuleAuthoringRecipeTests.swift)
+accepts a preview that constructs each selected view. It ignores out-of-scope
+views. An unrelated preview, a constructor outside a preview, or a preview in
+another file cannot satisfy the rule. The failure points to the view declaration.
+
+The repair is to add a matching preview in that file. This example recognizes
+structs with explicit `View` inheritance and written constructor names inside
+`#Preview`. It does not resolve aliases, qualified names, inferred conformances,
+or whether the preview renders successfully. The scope chooses which views
+need previews.
+
+### Previews avoid live factories
+
+```swift
+let previewDependencies = Rules.forbid(
+    macroExpansions().named("Preview").containing(functionCalls().named("Client.live")),
+    id: "ui.preview_dependencies",
+    summary: "Previews use sample clients."
+) { _ in
+    "Use a sample client in this preview."
+}
+```
+
+`previewsDoNotCreateLiveClients` in
+[RelatedRuleRecipeTests.swift](../Tests/BumperBowlingTestSupportTests/RelatedRuleRecipeTests.swift)
+accepts sample clients inside previews and live calls elsewhere. Two forbidden
+calls inside one preview produce one failure on that preview.
+
+The repair is to supply the sample client. This policy recognizes the configured
+`Client.live` spelling. It does not prove that sample data performs no I/O or
+catch every way to construct a live dependency.
+
+### Explicit coding keys cover stored fields
+
+This project requires explicit `CodingKeys` to list each direct stored instance
+property. Types without `CodingKeys` retain Swift's automatic synthesis.
+Swift permits a default-valued property to be omitted from coding keys. That
+omission can silently exclude a field this project expects to persist.
 
 ```swift
 import BumperBowlingCore
 import SwiftSyntax
 
-let swiftUIPreviews = Rules.each(
-    structs().inheriting("View"),
-    id: "app.swiftui_preview",
-    summary: "Each feature view has a preview in the same file.",
-    scope: .under("Sources/Features")
-) { view in
-    let previews = macroExpansions().named("Preview").matches(in: view.file)
-    let viewName = view.node.name.text
-    let hasPreview = previews.contains { preview in
-        preview.node
-            .descendants(of: FunctionCallExprSyntax.self)
-            .map(\.calleeName)
-            .contains(viewName)
+let explicitCodingKeys = Rules.each(
+    structs().inheriting("Codable"),
+    id: "persistence.coding_keys",
+    summary: "Explicit CodingKeys covers each stored instance property.",
+    scope: .under("Sources/Persistence")
+) { model in
+    let keys = SyntaxQuery<EnumDeclSyntax>().filter { $0.name == "CodingKeys" }.members(of: model)
+    guard let keys = keys.first else { return [] }
+    let cases = SyntaxQuery<EnumCaseDeclSyntax>().members(of: keys)
+    let names = Set(cases.flatMap { $0.node.elements.map { $0.name.text } })
+    return variables().storedMembers().filter { variable in
+        !variable.node.modifiers.contains { ["static", "class"].contains($0.name.text) }
+    }.members(of: model).flatMap { property in
+        property.bindingNames.filter { !names.contains($0) }.map { name in
+            property.failure(
+                message: "Include \(name) in this type's CodingKeys.",
+                evidence: ViolationEvidence(
+                    observed: "stored property \(name) has no direct CodingKeys case",
+                    expectation: "explicit CodingKeys lists every direct stored instance property"
+                )
+            )
+        }
     }
-    return hasPreview ? [] : [view.failure(
-        message: "\(viewName) needs a #Preview that constructs \(viewName)."
-    )]
 }
 ```
 
-This example recognizes explicit inheritance and constructor names inside
-`#Preview`. It does not prove that a preview renders successfully. The project
-chooses which views need previews through the scope.
+`codingKeysCoverDirectStoredInstanceProperties` in
+[RelatedRuleRecipeTests.swift](../Tests/BumperBowlingTestSupportTests/RelatedRuleRecipeTests.swift)
+accepts complete keys, renamed raw values, and automatic synthesis. It excludes
+static properties, computed properties, and nested types' members. A case in a
+nested helper or another file cannot cover the selected field. Each missing
+field produces a failure at its property declaration, with source evidence.
+
+The repair is to add the missing case. Intentional omissions need a narrower
+scope or a different project policy. This example checks explicit `Codable`
+structs and direct enum cases. It does not combine extensions, resolve property
+wrappers, interpret conditional compilation, or analyze custom encoders.
 
 ## An explicit nominal-name query
 

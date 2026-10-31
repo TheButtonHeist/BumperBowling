@@ -112,7 +112,7 @@ private let valueOperationPairs = Rules.each(
     summary: "Selected value types offer matching in-place and value-returning union operations.",
     scope: .under("Sources/Values")
 ) { value in
-    let methods = value.node.memberBlock.members.compactMap { $0.decl.as(FunctionDeclSyntax.self) }
+    let methods = functions().members(of: value).map(\.node)
     return methods.compactMap { method -> RuleFailure? in
         let parameters = method.signature.parameterClause.parameters
         guard method.name.text == "formUnion", method.modifiers.contains(where: { $0.name.text == "mutating" }),
