@@ -1,288 +1,133 @@
 import Foundation
+import SwiftLintFramework
 
-/// Identity, severity, and invariant summary for one rule.
-/// `summary` describes the invariant; it is not the violation message.
-public struct RuleMetadata: Equatable, Sendable, Codable {
-    public let id: RuleID
-    public let severity: Severity
+public struct RuleMetadata: Sendable {
+    public let id: String
     public let summary: String
+    public let severity: ViolationSeverity
 
-    public init(id: RuleID, severity: Severity, summary: String) {
+    public init(id: String, summary: String, severity: ViolationSeverity = .error) {
         self.id = id
-        self.severity = severity
         self.summary = summary
-    }
-}
-
-/// One diagnostic produced by rule evaluation, before rule metadata attaches.
-public struct RuleFailure: Equatable, Sendable {
-    public let path: RelativeFilePath
-    public let location: SourcePosition?
-    public let message: String
-    public let evidence: ViolationEvidence?
-    /// Overrides the rule's severity for this one diagnostic. Rules with
-    /// per-scope configured severities report each finding at its scope's
-    /// severity while keeping one stable rule ID.
-    public let severity: Severity?
-
-    public init(
-        path: RelativeFilePath,
-        location: SourcePosition? = nil,
-        message: String,
-        evidence: ViolationEvidence? = nil,
-        severity: Severity? = nil
-    ) {
-        self.path = path
-        self.location = location
-        self.message = message
-        self.evidence = evidence
         self.severity = severity
     }
 }
 
-/// The canonical structured diagnostic. Evaluation, tests, CLI, JSON, and
-/// Markdown all project this one value.
-public struct RuleViolation: Equatable, Sendable, Codable {
-    public let rule: RuleMetadata
-    public let path: RelativeFilePath
-    public let location: SourcePosition?
-    public let message: String
-    public let evidence: ViolationEvidence?
-
-    public init(
-        rule: RuleMetadata,
-        path: RelativeFilePath,
-        location: SourcePosition? = nil,
-        message: String,
-        evidence: ViolationEvidence? = nil
-    ) {
-        self.rule = rule
-        self.path = path
-        self.location = location
-        self.message = message
-        self.evidence = evidence
-    }
-
-    public init(rule: RuleMetadata, failure: RuleFailure) {
-        self.init(
-            rule: failure.severity.map { severity in
-                RuleMetadata(id: rule.id, severity: severity, summary: rule.summary)
-            } ?? rule,
-            path: failure.path,
-            location: failure.location,
-            message: failure.message,
-            evidence: failure.evidence
-        )
-    }
-
-    public var ruleID: RuleID {
-        rule.id
-    }
-
-    public var severity: Severity {
-        rule.severity
-    }
-
-    public var markdownLocation: String {
-        guard let location else {
-            return path.rawValue
+/// The native configuration carries repository identity, not executable policy.
+/// Rule settings and predicates are reviewed Swift source.
+public struct RuleSettings<Parent: Rule>: RuleConfiguration {
+    public private(set) var root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    public init() {}
+    public mutating func apply(configuration: Any) throws(Issue) {
+        guard let dictionary = configuration as? [String: String], dictionary.count == 1,
+              let path = dictionary["repository_root"], path.hasPrefix("/") else {
+            throw .invalidConfiguration(ruleID: Parent.identifier)
         }
-
-        return "\(path.rawValue):\(location.line):\(location.column)"
+        root = URL(fileURLWithPath: path)
     }
 }
 
-/// The canonical structured report over one evaluation.
-public struct RuleReport: Equatable, Sendable, Codable {
-    public let violations: [RuleViolation]
-
-    public init(violations: [RuleViolation]) {
-        self.violations = violations
-    }
-
-    public var hasErrors: Bool {
-        violations.contains { violation in
-            violation.rule.severity == .error
-        }
-    }
-
-    public var markdownSummary: String {
-        if violations.isEmpty {
-            return "No rule violations found."
-        }
-
-        var lines = [
-            hasErrors ? "The code breaks the configured rules:" : "The rules reported these warnings:",
-            "",
-        ]
-        for violation in violations {
-            lines.append(
-                "- [\(violation.severity.rawValue.uppercased())] \(violation.markdownLocation): \(violation.message) (\(violation.ruleID.rawValue))"
-            )
-        }
-        return lines.joined(separator: "\n")
-    }
-}
-
-/// One rule: identity, scope, and evaluation over an immutable context.
-/// Built-in and consumer rules conform to this same protocol.
-public protocol RuleDefinition: Sendable {
-    var metadata: RuleMetadata { get }
+/// Every DSL rule is its own native SwiftLint rule type and keeps its own ID.
+public protocol BumperRule: SourceKitFreeRule where ConfigurationType == RuleSettings<Self> {
+    static var metadata: RuleMetadata { get }
     var scope: RuleScope { get }
-
-    func evaluate(in context: RuleContext) throws -> [RuleFailure]
+    func checkInput(_ files: [SourceFileContext]) throws
 }
 
-@resultBuilder
-public enum RuleSetBuilder {
-    public static func buildExpression(_ expression: some RuleDefinition) -> [any RuleDefinition] {
-        [expression]
+public extension BumperRule {
+    static var description: RuleDescription {
+        RuleDescription(identifier: metadata.id, name: metadata.id, description: metadata.summary, kind: .lint)
     }
 
-    public static func buildExpression(_ expression: [any RuleDefinition]) -> [any RuleDefinition] {
-        expression
-    }
+    var shouldLintEmptyFiles: Bool { true }
+    var scope: RuleScope { .repository }
+    func checkInput(_ files: [SourceFileContext]) throws { try scope.validate() }
 
-    public static func buildExpression(_ expression: RuleSet) -> [any RuleDefinition] {
-        expression.rules
-    }
-
-    public static func buildBlock(_ components: [any RuleDefinition]...) -> [any RuleDefinition] {
-        components.flatMap { $0 }
-    }
-
-    public static func buildOptional(_ component: [any RuleDefinition]?) -> [any RuleDefinition] {
-        component ?? []
-    }
-
-    public static func buildEither(first component: [any RuleDefinition]) -> [any RuleDefinition] {
-        component
-    }
-
-    public static func buildEither(second component: [any RuleDefinition]) -> [any RuleDefinition] {
-        component
-    }
-
-    public static func buildArray(_ components: [[any RuleDefinition]]) -> [any RuleDefinition] {
-        components.flatMap { $0 }
-    }
-}
-
-/// One heterogeneous rule collection evaluated by one engine.
-public struct RuleSet: Sendable {
-    public let rules: [any RuleDefinition]
-
-    public init(rules: [any RuleDefinition]) {
-        self.rules = rules
-    }
-
-    public init(@RuleSetBuilder _ rules: () -> [any RuleDefinition]) {
-        self.init(rules: rules())
-    }
-
-    public static let empty = RuleSet(rules: [])
-
-    /// Evaluates every rule over one parsed repository. The engine owns
-    /// context construction, so every run has one repository and one fact
-    /// cache. Analysis errors are not violations: a throwing rule aborts
-    /// the run with an explicit error.
-    public func evaluate(
-        configuration: ArchitectureConfiguration = ArchitectureConfiguration(),
-        repository: RepositorySyntax
-    ) throws -> RuleReport {
-        try evaluationRun(configuration: configuration, repository: repository).report
-    }
-
-    /// The same evaluation, keeping its telemetry: per-rule and per-fact
-    /// durations for diagnosing slow project rules.
-    public func evaluationRun(
-        configuration: ArchitectureConfiguration = ArchitectureConfiguration(),
-        repository: RepositorySyntax
-    ) throws -> EvaluationRun {
-        try evaluationRun(in: RuleContext(configuration: configuration, repository: repository))
-    }
-
-    func evaluate(in context: RuleContext) throws -> RuleReport {
-        try evaluationRun(in: context).report
-    }
-
-    func evaluationRun(in context: RuleContext) throws -> EvaluationRun {
-        let clock = ContinuousClock()
-        let runStart = clock.now
-        try validateRuleIdentity()
-
-        var ruleSeconds: [EvaluationTelemetry.Measurement] = []
-        var collected: [RuleViolation] = []
-        for rule in rules {
-            let ruleStart = clock.now
-            collected += try Self.violations(of: rule, in: context)
-            ruleSeconds.append(
-                EvaluationTelemetry.Measurement(
-                    id: rule.metadata.id.rawValue,
-                    seconds: (clock.now - ruleStart).secondsValue
-                )
-            )
-        }
-
-        return EvaluationRun(
-            report: RuleReport(violations: collected.deterministicallySorted()),
-            telemetry: EvaluationTelemetry(
-                ruleSeconds: ruleSeconds,
-                factSeconds: context.factMeasurements(),
-                totalSeconds: (clock.now - runStart).secondsValue
-            )
-        )
-    }
-
-    /// Duplicate rule IDs are a configuration error, not last-writer-wins.
-    private func validateRuleIdentity() throws {
-        var seen = Set<RuleID>()
-        for rule in rules {
-            guard seen.insert(rule.metadata.id).inserted else {
-                throw RuleEvaluationError.duplicateRuleID(rule.metadata.id)
-            }
-        }
-    }
-
-    private static func violations(of rule: any RuleDefinition, in context: RuleContext) throws -> [RuleViolation] {
-        do {
-            return try rule.evaluate(in: context).map { failure in
-                RuleViolation(rule: rule.metadata, failure: failure)
-            }
-        } catch let error as RuleEvaluationError {
-            throw error
-        } catch {
-            throw RuleEvaluationError.ruleFailed(rule.metadata.id, String(describing: error))
+    func violations(from failures: [RuleFailure]) -> [StyleViolation] {
+        failures.map {
+            StyleViolation(ruleDescription: Self.description, severity: Self.metadata.severity, location: $0.location, reason: $0.message)
         }
     }
 }
 
-/// Explicit analysis failures. Never converted into empty match sets.
-public enum RuleEvaluationError: Error, Equatable, Sendable, CustomStringConvertible {
-    case ruleFailed(RuleID, String)
-    case missingSource(RelativeFilePath)
-    case missingConfiguredOwner(RuleID, String)
-    case duplicateRuleID(RuleID)
-    case emptyRuleScope(RuleID)
-    case invalidSyntaxCardinality(RuleID, Int)
-    case diagnosticOutsideScope(RuleID, RelativeFilePath)
+public protocol SyntaxRule: BumperRule {
+    var body: SyntaxCheck { get }
+}
 
-    public var description: String {
-        switch self {
-        case .ruleFailed(let id, let message):
-            "Rule \(id.rawValue) failed to evaluate: \(message)"
-        case .missingSource(let path):
-            "Source text is unavailable for \(path.rawValue); rules over syntax cannot evaluate."
-        case .missingConfiguredOwner(let id, let owner):
-            "Rule \(id.rawValue) requires configured owner files under \(owner), but none exist."
-        case .duplicateRuleID(let id):
-            "Rule ID \(id.rawValue) is declared more than once; rule IDs must be unique."
-        case .emptyRuleScope(let id):
-            "Rule \(id.rawValue) requires syntax matches, but its scope selects no files."
-        case .invalidSyntaxCardinality(let id, let count):
-            "Rule \(id.rawValue) has a negative syntax cardinality (\(count)); counts must be nonnegative."
-        case .diagnosticOutsideScope(let id, let path):
-            "Rule \(id.rawValue) reported \(path.rawValue) outside its selected subjects. Anchor the diagnostic at a selected file."
+public extension SyntaxRule {
+    var scope: RuleScope { body.scope }
+    func validate(file: SwiftLintFile) -> [StyleViolation] {
+        let context = SourceFileContext(file: file, root: configuration.root)
+        return scope.includes(context) ? violations(from: body.check(context)) : []
+    }
+}
+
+public protocol RepositoryRule: BumperRule, CollectingRule where FileInfo: Sendable {
+    var body: RepositoryCheck<FileInfo> { get }
+}
+
+public extension RepositoryRule {
+    var scope: RuleScope { body.scope }
+    func collectInfo(for file: SwiftLintFile) -> FileInfo {
+        body.collect(SourceFileContext(file: file, root: configuration.root))
+    }
+
+    func validate(file: SwiftLintFile, collectedInfo: [SwiftLintFile: FileInfo]) -> [StyleViolation] {
+        let context = SourceFileContext(file: file, root: configuration.root)
+        guard body.scope.includes(context) else { return [] }
+        let inventory = collectedInfo.sorted { ($0.key.path ?? "") < ($1.key.path ?? "") }.map(\.value)
+        return violations(from: body.check(context, inventory))
+    }
+
+    func checkInput(_ files: [SourceFileContext]) throws {
+        try scope.validate()
+        guard files.contains(where: body.scope.includes) else {
+            throw BumperError("\(Self.metadata.id) selected no subject files.")
         }
+    }
+}
+
+public struct SyntaxCheck: Sendable {
+    let scope: RuleScope
+    let check: @Sendable (SourceFileContext) -> [RuleFailure]
+}
+
+public struct RepositoryCheck<Info>: Sendable {
+    let scope: RuleScope
+    let collect: @Sendable (SourceFileContext) -> Info
+    let check: @Sendable (SourceFileContext, [Info]) -> [RuleFailure]
+}
+
+/// Composable syntax policies; SwiftLint owns scheduling, parsing, and collection.
+public enum Rules {
+    public static func forbid<Pattern: SyntaxPattern>(
+        _ pattern: Pattern,
+        scope: RuleScope = .repository,
+        _ message: @escaping @Sendable (SyntaxMatch<Pattern.Match>) -> String
+    ) -> SyntaxCheck {
+        each(pattern, scope: scope) { [$0.failure(message: message($0))] }
+    }
+
+    public static func each<Pattern: SyntaxPattern>(
+        _ pattern: Pattern,
+        scope: RuleScope = .repository,
+        _ check: @escaping @Sendable (SyntaxMatch<Pattern.Match>) -> [RuleFailure]
+    ) -> SyntaxCheck {
+        files(scope: scope) { pattern.matches(in: $0).flatMap(check) }
+    }
+
+    public static func files(
+        scope: RuleScope = .repository,
+        _ check: @escaping @Sendable (SourceFileContext) -> [RuleFailure]
+    ) -> SyntaxCheck {
+        SyntaxCheck(scope: scope, check: check)
+    }
+
+    public static func repository<Info>(
+        scope: RuleScope = .repository,
+        collect: @escaping @Sendable (SourceFileContext) -> Info,
+        check: @escaping @Sendable (SourceFileContext, [Info]) -> [RuleFailure]
+    ) -> RepositoryCheck<Info> {
+        RepositoryCheck(scope: scope, collect: collect, check: check)
     }
 }

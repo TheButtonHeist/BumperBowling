@@ -1,158 +1,94 @@
-# Bumper Bowling Architecture
+# Architecture
 
-Bumper Bowling is a Swift rule engine over SwiftSyntax-observed source facts.
-The architecture DSL supplies optional ownership and dependency policy.
-
-The configuration language is specified in [DSL_SPEC.md](DSL_SPEC.md). Bumper Bowling ships one engine and one dumb interface over that engine: the `bumper` CLI for shell workflows, CI jobs, and product tests.
-
-Bumper Bowling is designed to feel familiar beside SwiftLint: rules, severities, included/excluded paths, opt-in rules, reports, and a primary `bumper lint` command.
-
-It runs alongside SwiftLint; it does not replace SwiftLint. SwiftLint owns local Swift style and code smells. Bumper Bowling owns the project's architectural rules: what each component owns, may depend on, may use, and must prove from SwiftSyntax nodes.
-
-SwiftPM is the canonical distribution path. Tagged versions of this repository
-publish both the `BumperBowlingCore` library product and the `bumper`
-executable product. Other installers can wrap the CLI later, but they should
-not become the source of truth.
-
-SwiftLint configuration lives in `.swiftlint.yml`.
-
-The tool should stay tiny. Prefer a small SwiftSyntax-first core, simple Swift configuration constructors, and boring CLI behavior over generated accessors, dynamic lookup, plugins, or clever configuration machinery.
-
-The interesting part is the assertion model, not the wrapper. Bumper Bowling turns SwiftSyntax-visible source facts into a graph, then evaluates typed Swift declarations against that graph. The CLI target is intentionally a thin delivery surface for hooks, CI, and product tests.
-
-## Core Model
+Bumper is a Swift DSL for repository conventions. SwiftLintFramework is its
+runtime. SwiftSyntax supplies the source tree and syntax node types.
 
 ```text
-The host collects all included Swift sources
-RepositorySyntax parses each source once
-Rules inspect syntax and shared derived facts
-Architecture facts add component ownership and dependency edges
-RuleSet produces one structured RuleReport
+Repository Swift package
+  BumperProject -> named SyntaxRule / RepositoryRule types
+                         |
+  syntax queries -> policy body -> located RuleFailure values
+                         |
+  SwiftLint configuration, collection, validation, and reporting
+                         |
+                    StyleViolation
 ```
 
-The lint run itself is modeled as an explicit reducer-backed state machine:
-prepare rules, scan sources, evaluate rules, and report. Evaluation is
-sequential in declaration order; the final report is sorted deterministically
-by path, line, column, rule ID, then message.
+## Ownership
 
-Bumper Bowling is not a semantic analyzer. If SwiftSyntax cannot observe something, Bumper Bowling cannot truthfully assert it. Compiler-backed checks belong in a later, separate `analyze` lane; candidate requests are tracked in [COMPILER_REQUESTS.md](COMPILER_REQUESTS.md).
+Bumper owns the readable policy vocabulary, repository-relative scopes,
+diagnostic construction, paired fixture support, package starter, commands,
+and input and process bounds.
 
-The current SwiftSyntax node surface is documented in [SWIFTSYNTAX_SURFACE.md](SWIFTSYNTAX_SURFACE.md).
+SwiftLint owns cached parsing, native rule execution, per-rule cross-file
+storage, disable directives, severity types, and standard reporting. Every DSL
+rule has its own native rule type and identifier. Native rules can be registered
+alongside DSL rules.
 
-## Configuration Loading
+SwiftPM owns dependency resolution, compilation, and build reuse. The committed
+`.bumper/Package.swift` is the only package mode. There is no generated runner
+manifest, source-copy cache, describe/evaluate protocol, or second evaluator.
 
-`BumperBowling.swift` loads the way SwiftPM loads `Package.swift`: it is a program, so it is compiled and run rather than parsed.
+## Execution
 
-The project runner generates a small package that links `BumperBowlingCore`, compiles `BumperBowling.swift` into it, and builds it optimized (release configuration), and runs the product in a deny-default sandbox — no network, no writable paths, an empty environment. One cached executable serves two modes. `describe` prints the project's architecture configuration as JSON so the host knows what to scan. `evaluate` receives the scanned source files on stdin as Codable `RepositoryInput`, parses each file exactly once into `RepositorySyntax`, evaluates built-in and project rules in one `RuleSet`, and prints one Codable `EvaluationRun` — the canonical `RuleReport` plus per-rule and per-fact timing telemetry. Nothing else crosses back; scanning stays in the host process, never in configuration code, and rule code does not receive filesystem traversal.
+1. `bumper lint` builds the repository package’s `BumperRulesRunner` product.
+2. The bounded command helper runs that executable in the sandbox with the repository root.
+3. The scanner reads bounded UTF-8 source snapshots from included paths.
+4. The runner configures each DSL rule with the repository root.
+5. Duplicate IDs and invalid required subject selections fail preflight.
+6. Every included file is collected into one SwiftLint `RuleStorage`.
+7. SwiftLint validates files after collection completes.
+8. Bumper checks DSL diagnostic scopes and normalizes paths for reporting.
 
-The generated package and compiled output are cached. Before each runner invocation, SwiftPM checks whether sources, resources, or dependencies need rebuilding. An unchanged package uses an incremental build check. Rule and configuration edits reuse the same generated package directory, preserving dependency build products. Cache identity depends on the project and library paths, toolchain, and build configuration; SwiftPM tracks changed inputs. `bumper config` loads the configuration and reports whether it is valid.
+`RepositoryRule.FileInfo` holds typed observations for one file. Collection
+covers all included files; a scope selects subjects for validation. Bumper has
+no generic shared-fact cache. A file context retains the source and syntax
+snapshot needed by collected matches when SwiftLint evicts its file caches.
 
-The host uses nonblocking pipes to send sources and capture output. One monotonic time budget covers input transfer, execution, and output collection. Output limits remain enforced while the child runs.
+The violation cache is disabled. Editing a rule or companion file therefore
+changes the next run without a custom invalidation protocol. SwiftPM build
+caching remains enabled and has a real rule-edit acceptance check.
 
-In source mode, the cached package also owns one generated `BumperRuleTests`
-target. `bumper test` fills that target from `BumperBowling.swift`,
-`.bumper/Sources`, and `.bumper/Tests`, then delegates discovery and execution
-to `swift test`. Test source identity is tracked separately from runner
-identity: changing only a test refreshes and recompiles the test target without
-invalidating the lint runner. When `.bumper` is a Swift package, `bumper test`
-runs that package's ordinary test targets directly, preserving package-owned
-`@testable` visibility. The test process is ordinary trusted SwiftPM test code,
-not sandboxed configuration evaluation. It uses SwiftPM's ordinary debug test
-default and does not prebuild the optimized lint runner. Source-mode cache
-updates and test execution share an interprocess lock so concurrent invocations
-cannot replace the generated target underneath one another. Source-mode tests use a separate generated-package cache from lint.
-Lint cache preparation, builds, and execution also share a project lock. A process-local lock prevents concurrent threads from bypassing file locks.
+## Runtime contracts
 
-A configuration should declare the architecture the repository wants, then lower into assertions over observed facts. Prefer `Component`, `Owns`, `MayDependOn`, `MayUse`, and scoped fact assertions over free-floating negative rules.
+| Boundary | Contract |
+| --- | --- |
+| Source input | At most 20,000 Swift files, 10 MiB per file, and 200 MiB total |
+| Paths | Repository-relative includes; no source symlinks or root escapes |
+| Text | Valid UTF-8; supply the bounded snapshot before native parsing |
+| Build | 600-second timeout; 4 MiB per captured output stream |
+| Lint execution | 60-second default timeout; 4 MiB per captured output stream |
+| Consumer tests | Interactive ordinary `swift test`, with inherited terminal I/O |
+| Findings | Native warning/error severity; errors exit 1 and warnings exit 0 |
+| Host failures | Nonzero status; runner preflight failures exit 2 |
 
-`scan` and `snapshot` expose the observed graph Bumper Bowling can build from
-SwiftSyntax and repo shape. The graph holds the source files, component nodes,
-dependency edges, computed source facts, and a raw SwiftSyntax node catalog.
-That graph is evidence for the declared bounds, not a source of generated
-policy.
+`BUMPER_EVALUATION_TIMEOUT_SECONDS` accepts positive finite seconds.
+`BUMPER_RUNNER_BUILD_CONFIGURATION` accepts `debug` or `release`; the default is
+debug. The bounded process helper retains its timeout, pipe, large-input, and
+closed-input regression tests.
 
-SwiftSyntax remains the full source tree. Generic rules can inspect that tree
-without component declarations. `ArchitectureGraph` is an optional projection
-for architecture policy. Unowned files remain in source facts, while component
-edges require ownership. Raw syntax checks use SwiftSyntax's `SyntaxKind`;
-richer local checks use extensions on real nodes through `node.bumper`.
+Builds and consumer tests run trusted Swift code with normal process access.
+`bumper lint` retains the deny-default evaluation sandbox: reads are allowed;
+writes and network are denied. Its environment contains only `TOOLCHAIN_DIR`,
+resolved from the selected Swift toolchain before entering the sandbox.
+SourceKitten needs that library path even for syntax-only execution.
+Direct `swift run` bypasses the CLI execution boundary.
 
-Add graph facts only when they support an assertion Bumper Bowling can explain. Rules should be lean mathematical operations over nodes: path matching, set membership, graph edges, and cycles. Keep scorecards explainable: report the observed graph fact, the declared lane, and why they do not match.
+The scanner retains Bumper’s path and resource checks because native discovery
+does not supply the same contract. It does not parse source. The DSL requests
+SwiftLint’s cached tree and never calls `Parser.parse`.
 
-Semantic shorthand names are not special engine concepts.
-`ComponentRequirement` composes `SourceFactRule` values, then `Requires(...)`
-applies scope and severity. Built-in requirement conveniences and
-repository-owned requirements lower into the same raw graph assertions.
+## Dependency boundary
 
-Consumer repositories can place Swift files under `.bumper/Sources` to define
-their own `ComponentRequirement`, `ComponentShape`, `AssertionShape`, and
-custom rule vocabulary. Those files compile into the temporary configuration
-runner beside `BumperBowling.swift`. They do not add a plugin boundary or hidden evaluator;
-they are just consumer-owned Swift values that lower into the same
-`ArchitectureConfiguration` data as inline configuration code, or into
-`RuleDefinition` values the project adds to its `Rules` block.
+The verified pair is SwiftLint 0.63.3 and SwiftSyntax
+604.0.0-prerelease-2026-04-21, built with Swift 6.4. Newer SwiftLint releases
+pin different SwiftSyntax versions. Upgrade both through the compiled DSL,
+fixture, runner, and runtime checks.
 
-Reusable vocabulary can also live in a conventional `.bumper/Package.swift`
-SwiftPM package. The generated runner depends on its `BumperRules` library
-product so `BumperBowling.swift` can import it; this does not discover,
-download, or apply rules.
+Bumper requires `SourceKitFreeRule` and supplies no compiler arguments. It does
+not request SourceKit analysis. SwiftLintFramework still brings its transitive
+library dependencies; a smaller Bumper codebase does not imply a smaller binary
+or faster clean build.
 
-## Product Lane
-
-Bumper Bowling lives between linting and compilation.
-
-- SwiftLint owns local style, convention, and code smells.
-- The compiler owns type checking, symbol resolution, macro expansion, and build truth.
-- Bumper Bowling owns architectural rules when they can be checked from SwiftSyntax nodes and repo metadata.
-
-That lane is especially useful for agentic work because it gives an automated editor a formal contract before it touches the repository, then leaves a scorecard after it does.
-
-## Lanes
-
-A lane is a declared architectural boundary.
-
-Most lanes are `Component` values. A component lane has:
-
-- owned paths
-- module aliases
-- allowed dependencies
-- allowed capabilities
-- scoped assertions
-
-Some assertions use narrower lanes. `RequiresScoped(...)` and assertion path filters apply a rule to a specific path scope inside the repository.
-
-Composed shapes preserve those narrower lanes as distinct rule settings. The
-merged `RuleConfiguration` fields remain a compatibility summary, but the
-validator evaluates the scoped settings list so severity, paths, and exclusions
-stay attached to the clause that declared them.
-
-The rule engine should always know which lane a finding came from. A report without a lane is hard to fix.
-
-## Components
-
-- `BumperBowlingCore` owns parsing, rule construction, repository scanning, architecture modeling, and linting.
-- `BumperBowling` is the CLI adapter for hooks and CI jobs. It may depend on `BumperBowlingCore`; core must not depend on the CLI.
-- Tests may import product modules and testing frameworks, but production targets must not import test frameworks.
-- Language parsing is SwiftSyntax-driven. Swift is the only language surface.
-
-## Architectural Rules
-
-- Core domain rules must be represented as typed values before use.
-- Swift configuration structs are boundary/input shapes only; scanning and validation operate on typed rules.
-- Strings are parsed into domain types at boundaries. Core models should carry `ComponentID`, `ModuleName`, paths, declaration names, and attributes as types.
-- Empty component names, module names, path prefixes, and unknown dependency references are invalid.
-- Duplicate component IDs, module aliases, and path ownership are invalid.
-- SwiftSyntax parsing is syntax-only. Reports must not imply compiler-level symbol resolution.
-- Public API detection is syntactic and covers declarations marked `public` or `open`.
-- Stateful parsers use explicit enum-based state machines. Stateless fact collection should stay as direct functional projection over SwiftSyntax nodes.
-- Avoid `Any` and broad existential abstractions in domain code.
-- Avoid code generation unless it directly supports a core linting workflow.
-
-## Swift Rules
-
-- Use Swift 6 strict concurrency.
-- Public model types that cross component boundaries should be `Sendable`.
-- Prefer immutable value types for parsed architecture state.
-- Prefer `let` for domain data. Use local mutation only as a scoped builder detail when Swift APIs require callback-style accumulation.
-- Do not add `@unchecked Sendable` without a local explanation.
-- Do not use `swift build` for future iOS projects in this repo family; use `xcodebuild` when iOS SDK access matters.
+Collection is supplied to each selected subject file. Keep subject scopes narrow
+when repository aggregation is expensive; no shared aggregate cache is implied.
