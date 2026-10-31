@@ -86,32 +86,6 @@ struct StandardShaperTests {
     }
 
     @Test
-    func typeAndStoredPropertyShapersCoverNewFactSurfaces() throws {
-        let types = Rules.disallowTypeReferences("Any", in: .repository, id: "no_any")
-        let bools = Rules.maximumStoredProperties(matching: "Bool", maximum: 1, in: .repository, id: "bool_soup")
-        let report = try RuleTestHarness(RuleSet { types; bools }).evaluate(
-            [
-                SourceInput.swift("Sources/Core/State.swift", component: "core", source: "struct State { let one: Bool; let two: Bool }\nfunc leak(_ value: Any) -> Any { value }"),
-            ]
-        )
-
-        #expect(report.violations.map(\.ruleID) == ["bool_soup", "bool_soup", "no_any", "no_any"])
-    }
-
-    @Test
-    func stateMachineShapeRequiresAssociatedValueCasesWhenConfigured() throws {
-        let report = try RuleTestHarness(
-            Rules.stateMachineShape(in: .repository, requiresAssociatedValueCase: true)
-        ).evaluate(
-            [
-                SourceInput.swift("Sources/Core/State.swift", component: "core", source: "enum WorkflowState { case idle }"),
-            ]
-        )
-
-        #expect(report.violations.first?.message == "State enum has no associated-value case.")
-    }
-
-    @Test
     func singleDeclarationPassesForOneOwnedDeclaration() throws {
         let rule = Rules.singleDeclaration(
             NominalSymbol("AccessibilityTarget"),
@@ -435,48 +409,4 @@ struct StandardShaperTests {
         #expect(Set(report.violations.compactMap { $0.message.split(separator: " ").first }) == ["descend", "visit"])
     }
 
-    @Test
-    func canonicalConstructionFlagsConstructionOutsideOwners() throws {
-        let rule = Rules.canonicalConstruction(
-            NominalSymbol("InterfaceGraph"),
-            owners: .under(RelativePathPrefix("Sources/Builders"))
-        )
-
-        let report = try RuleTestHarness(rule).evaluate(
-            [
-                SourceInput.swift(
-                    "Sources/Builders/Builder.swift",
-                    component: "core",
-                    source: "func make() { _ = InterfaceGraph() }"
-                ),
-                SourceInput.swift(
-                    "Sources/Feature/Rogue.swift",
-                    component: "core",
-                    source: "func rogue() { _ = InterfaceGraph() }"
-                ),
-            ]
-        )
-
-        #expect(report.violations.map(\.path.rawValue) == ["Sources/Feature/Rogue.swift"])
-        #expect(report.violations.first?.rule.id == "canonical_construction")
-    }
-
-    @Test
-    func singleNominalSpellingFlagsSuffixedDeclarationsOutsideOwner() throws {
-        let rule = Rules.singleNominalSpelling(
-            suffix: "Expr",
-            owner: .under(RelativePathPrefix("Sources/Plans"))
-        )
-
-        let report = try RuleTestHarness(rule).evaluate(
-            [
-                SourceInput.swift("Sources/Plans/Exprs.swift", component: "plans", source: "enum LiteralExpr {}"),
-                SourceInput.swift("Sources/Score/Rogue.swift", component: "score", source: "struct CallExpr {}"),
-                SourceInput.swift("Sources/Score/Unrelated.swift", component: "score", source: "struct Scorecard {}"),
-            ]
-        )
-
-        #expect(report.violations.map(\.path.rawValue) == ["Sources/Score/Rogue.swift"])
-        #expect(report.violations.first?.message.contains("CallExpr") == true)
-    }
 }

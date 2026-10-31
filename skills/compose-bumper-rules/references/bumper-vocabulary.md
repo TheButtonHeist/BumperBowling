@@ -117,11 +117,9 @@ Prefer these before writing a closure rule. Each accepts optional `id:` and
 | `Rules.memberReferenceOwnership(_:allowed:)` | Selected member references stay inside their owners. |
 | `Rules.singleDeclaration(_:owner:)` | One declaration under its owner path. |
 | `Rules.constructionOwnership(_:allowed:)` | Construction only in the allowed scope. |
-| `Rules.canonicalConstruction(_:owners:)` | Canonical-value construction ownership. |
 | `Rules.boundaryOnly(function:allowed:)` | Function calls only in a boundary scope. |
 | `Rules.noAlternateAliases(_:allowing:)` | No aliases outside the allowing scope. |
 | `Rules.canonicalTraversal(root:structuralCase:owners:)` | Recursive traversal stays with its owners. |
-| `Rules.singleNominalSpelling(suffix:owner:)` | Suffixed nominal declarations stay under one owner. |
 
 Symbols and paths are typed values with string-literal authoring:
 

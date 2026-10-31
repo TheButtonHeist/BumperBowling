@@ -83,7 +83,7 @@ for any SwiftSyntax node type. Its closure receives the existing
 `SyntaxMatch<Node>` and returns zero or more failures. A thrown error aborts
 analysis through the existing evaluator.
 
-The [feature recipe](../RULE_RECIPES.md#requirements-inside-each-type) uses this
+The [feature recipe](../RULE_RECIPES.md#3-requirements-inside-each-declaration) uses this
 factory to inspect direct members of each selected declaration.
 
 `Rules.each` evaluates existing matches. Use `Rules.assert` to require a match.

@@ -3,6 +3,10 @@
 This guide builds one Bumper Bowling rule from the ground up. The rule gives
 one subsystem ownership of recursive tree traversal.
 
+This is a specialized example for a project that centralizes tree traversal.
+The graph uses call spellings. It does not resolve compiler identity, overloads,
+aliases, or dynamic dispatch. Iterative traversal is outside this rule.
+
 The example is useful because every layer is visible. SwiftSyntax supplies
 source observations. The repository gives those observations architectural
 meaning.
@@ -24,8 +28,8 @@ The intended traversal lives in `Sources/TreeTraversal`:
 // Sources/TreeTraversal/Walk.swift
 
 func walk(_ tree: Tree) {
-    if case .branch = tree {
-        walk(tree)
+    if case let .branch(children) = tree {
+        for child in children { walk(child) }
     }
 }
 ```
@@ -36,8 +40,8 @@ A feature later adds another traversal:
 // Sources/Features/Search/Search.swift
 
 func search(_ tree: Tree) {
-    if case .branch = tree {
-        search(tree)
+    if case let .branch(children) = tree {
+        for child in children { search(child) }
     }
 }
 ```
@@ -125,7 +129,7 @@ public struct CallGraphFunction: Hashable, Sendable {
     public let parameters: [CallGraphParameterEvidence]
     public let casePatterns: [CasePatternEvidence]
     public let path: RelativeFilePath
-    public let component: ComponentID
+    public let component: ComponentID?
     public let location: SourcePosition?
 }
 ```

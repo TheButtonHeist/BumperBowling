@@ -166,66 +166,6 @@ extension Rules {
         }
     }
 
-    /// Limits stored properties of a selected explicit type in each selected
-    /// file. Use this for bool-soup and optional-bag pressure without claiming
-    /// semantic state-machine analysis.
-    public static func maximumStoredProperties(
-        matching matcher: StringMatcher,
-        maximum: Int,
-        in scope: RuleScope,
-        id: RuleID = RuleID("maximum_stored_properties"),
-        severity: Severity = .error
-    ) -> RepositoryRule {
-        precondition(maximum >= 0, "Maximum stored properties cannot be negative.")
-        return RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "Selected stored properties stay within the configured limit.")) { context in
-            let properties = try context.facts(BuiltInFacts.storedProperties).filter { occurrence in
-                scope.includes(SourceFileDescriptor(path: occurrence.path, component: occurrence.component))
-                    && occurrence.property.type.map { matcher.matches($0) } == true
-            }
-            let groups = Dictionary(grouping: properties, by: { $0.path })
-            var failures: [RuleFailure] = []
-            for occurrences in groups.values where occurrences.count > maximum {
-                failures += occurrences.map { occurrence in
-                    RuleFailure(path: occurrence.path, location: occurrence.property.location, message: "\(occurrences.count) stored properties match \(matcher) in this file; maximum is \(maximum).", evidence: ViolationEvidence(observed: occurrence.property.name.rawValue, expectation: "at most \(maximum) matching stored properties per file"))
-                }
-            }
-            return failures
-        }
-    }
-
-    /// Requires a state enum in every selected file and, when requested,
-    /// requires at least one associated-value case. This is intentionally a
-    /// syntax shape check; it does not claim semantic state-machine proof.
-    public static func stateMachineShape(
-        in scope: RuleScope,
-        requiresAssociatedValueCase: Bool = false,
-        id: RuleID = RuleID("state_machine_shape"),
-        severity: Severity = .error
-    ) -> RepositoryRule {
-        RepositoryRule(metadata: RuleMetadata(id: id, severity: severity, summary: "Selected files declare an explicit state-machine shape.")) { context in
-            var failures: [RuleFailure] = []
-            for file in context.repository.files where scope.includes(file.descriptor) {
-                let states = SyntaxQuery<EnumDeclSyntax>().matches(in: file).filter {
-                    StringMatcher.suffix("State").matches($0.node.name.text)
-                }
-                guard !states.isEmpty else {
-                    failures.append(RuleFailure(path: file.path, message: "No State enum is declared.", evidence: ViolationEvidence(observed: "no enum ending in State", expectation: "an explicit state enum")))
-                    continue
-                }
-                guard requiresAssociatedValueCase else { continue }
-                let hasAssociatedValue = states.contains { state in
-                    state.node.memberBlock.members.contains { member in
-                        member.decl.as(EnumCaseDeclSyntax.self)?.elements.contains { $0.parameterClause != nil } == true
-                    }
-                }
-                if !hasAssociatedValue {
-                    failures.append(RuleFailure(path: file.path, location: states.first.flatMap { file.position(of: $0.node) }, message: "State enum has no associated-value case.", evidence: ViolationEvidence(observed: states.map { $0.node.name.text }.joined(separator: ", "), expectation: "at least one associated-value state case")))
-                }
-            }
-            return failures
-        }
-    }
-
     /// Exactly one declaration of `symbol`, owned by files under `owner`.
     /// A configured owner path with no files is a configuration failure.
     public static func singleDeclaration(
@@ -434,49 +374,6 @@ extension Rules {
         }
     }
 
-    /// `symbol` may only be constructed by its declared owners.
-    public static func canonicalConstruction(
-        _ symbol: NominalSymbol,
-        owners: RuleScope,
-        id: RuleID = RuleID("canonical_construction"),
-        severity: Severity = .error
-    ) -> RepositoryRule {
-        constructionOwnership(symbol, allowed: owners, id: id, severity: severity)
-    }
-
-    /// Every nominal declaration named with `suffix` lives in the owner scope.
-    public static func singleNominalSpelling(
-        suffix: String,
-        owner: RuleScope,
-        id: RuleID = RuleID("single_nominal_spelling"),
-        severity: Severity = .error
-    ) -> RepositoryRule {
-        RepositoryRule(
-            metadata: RuleMetadata(
-                id: id,
-                severity: severity,
-                summary: "Declarations named *\(suffix) live only in their owner scope."
-            )
-        ) { context in
-            let matcher = StringMatcher.suffix(suffix)
-            return try context.facts(BuiltInFacts.nominalTypes)
-                .filter { occurrence in
-                    matcher.matches(occurrence.type.name)
-                        && !owner.includes(SourceFileDescriptor(path: occurrence.path, component: occurrence.component))
-                }
-                .map { occurrence in
-                    RuleFailure(
-                        path: occurrence.path,
-                        location: occurrence.type.location,
-                        message: "\(occurrence.type.name.rawValue) is declared outside the \(suffix) owner scope.",
-                        evidence: ViolationEvidence(
-                            observed: "declaration of \(occurrence.type.name.rawValue)",
-                            expectation: "*\(suffix) declarations only in the owner scope"
-                        )
-                    )
-                }
-        }
-    }
 }
 
 private extension CallGraphFunction {

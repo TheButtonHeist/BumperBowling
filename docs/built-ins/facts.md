@@ -28,9 +28,9 @@ compare provider values or closure captures.
 | `BuiltInFacts.effectiveAccess` | Legacy nominal-only access caps. Use declaration contracts for complete signatures and unresolved access. |
 | `BuiltInFacts.enclosingDeclarations` | Each declaration's enclosing nominal chain. |
 | `BuiltInFacts.memberReferences` | Member-access spelling and optional base spelling. |
-| `BuiltInFacts.namedDeclarations` | Public and non-public nominal types, functions, variables, and type aliases with access, attributes, path, component, and location. |
+| `BuiltInFacts.namedDeclarations` | Written declarations, including special members, with explicit or default access, attributes, path, component, and location. |
 | `BuiltInFacts.declarationContracts` | Explicit declarations, enclosing context, explicit and lexical effective access, and signature types with source locations. |
-| `BuiltInFacts.typeReferences` | Explicit function/initializer parameter and return, local-binding, and type-alias type syntax. |
+| `BuiltInFacts.typeReferences` | Explicit function/initializer/subscript signatures, local and member annotations, aliases, enum payloads, and associated-type defaults. |
 | `BuiltInFacts.componentDependencies` | Component import edges derived from configuration. |
 
 For count requirements, use the cardinality factory:
@@ -46,7 +46,7 @@ Rules.assert(
 ```
 
 For relationships between observations, request facts inside `Rules.repository`
-through `context.facts(_:)`. The [route recipe](../RULE_RECIPES.md#relationships-across-files)
+through `context.facts(_:)`. The [route recipe](../RULE_RECIPES.md#5-relationships-across-files)
 collects declarations and registrations once, then compares them in a scoped rule.
 
 Define another provider by conforming a value type to `FactProvider`. A
@@ -56,13 +56,16 @@ provider can read other providers through the same `context.facts(_:)` call.
 
 `BuiltInFacts.declarationContracts` includes functions, initializers, properties
 (stored and computed), subscripts, typealiases, enum cases, nominal types, and
-associated types. Each contract carries its path, component, location, enclosing
+associated types. Macro declarations and generated members are outside this
+inventory. Each contract carries its path, component, location, enclosing
 `LexicalContext`, attributes, and explicit signature types. Each type reference
 retains its original `syntax` for custom SwiftSyntax queries and lexical lookup,
 as well as its value-only `type` shape. Private and internal
 declarations remain available to consumer rules.
 
-`explicitAccess` is nil when no access modifier was written. Setter modifiers
+`explicitAccess` is nil when no access modifier was written. `declaredAccess`
+includes lexical defaults from an extension, protocol, or enum. It remains
+available when effective access needs another file. Setter modifiers
 such as `private(set)` do not change the getter's explicit access.
 `effectiveAccess` is either `.resolved(AccessLevel)` or `.unresolved(reason)`.
 Protocol requirements and enum cases inherit enclosing access. Extension

@@ -21,14 +21,18 @@ one immutable `RuleContext`, producing `RuleFailure` values that become
 `RuleViolation`s in one `RuleReport`. There is no second engine, no registry,
 and no separate diagnostic shape for project rules.
 
+The [recipe progression](RULE_RECIPES.md) starts with a built-in boundary and
+ends with a derived call graph. Each example states its purpose, fixtures,
+diagnostic, repair, and syntax limits.
+
 ## The Ladder
 
 Author a rule at the highest level that expresses it, and move down only when
 the level above cannot:
 
 1. **Architecture DSL** — components, ownership, dependencies, capabilities,
-   and `Requires(...)` bundles inside `Architecture { ... }`. Most policy
-   belongs here.
+   and `Requires(...)` bundles inside `Architecture { ... }`. Use these when
+   the policy concerns components.
 2. **Standard shapers** — prebuilt `Rules.*` factories for common ownership and
    traversal invariants. One call, typed arguments.
 3. **Closure rules over typed facts** — `Rules.repository(...)` with memoized
@@ -99,11 +103,9 @@ rule, fact, and query interfaces. Each accepts an optional `id:` and
 | `Rules.memberReferenceOwnership(_:allowed:)` | Matching member-access spellings occur only inside the allowed scope; this is syntax, not property or method resolution. |
 | `Rules.singleDeclaration(_:owner:)` | Exactly one declaration of the symbol, under the owner path. A configured owner with no files is a configuration error. |
 | `Rules.constructionOwnership(_:allowed:)` | The type is constructed only inside the allowed scope. |
-| `Rules.canonicalConstruction(_:owners:)` | Same check, spelled for canonical-value ownership. |
 | `Rules.boundaryOnly(function:allowed:)` | Calls to the function occur only inside the boundary scope. |
 | `Rules.noAlternateAliases(_:allowing:)` | No `typealias` re-exposes the symbol outside the allowing scope. |
 | `Rules.canonicalTraversal(root:structuralCase:owners:)` | Recursive traversal of the type — direct or mutual, over locally dispatched calls — stays with its owners. |
-| `Rules.singleNominalSpelling(suffix:owner:)` | Every nominal declaration named with the suffix lives in the owner scope, using typed declaration facts. |
 
 Symbols and paths are `ExpressibleByStringLiteral`, so authoring stays plain:
 

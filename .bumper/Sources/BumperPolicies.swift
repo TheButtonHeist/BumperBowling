@@ -10,9 +10,9 @@ let parsingBoundary = Rules.boundaryOnly(
     id: "bumper.parsing_boundary"
 )
 
-let processConstructionBoundary = Rules.canonicalConstruction(
+let processConstructionBoundary = Rules.constructionOwnership(
     "Process",
-    owners: .files(["Sources/BumperBowlingCore/ConfigurationCommandRunner.swift"]),
+    allowed: .files(["Sources/BumperBowlingCore/ConfigurationCommandRunner.swift"]),
     id: "bumper.process_construction"
 )
 

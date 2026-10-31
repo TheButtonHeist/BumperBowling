@@ -22,7 +22,7 @@ Build policy through these visible paths:
 ```text
 SourceFactRule -> ComponentRequirement -> ComponentShape -> Component
 RuleConfiguration -> AssertionShape -> Rules block
-SyntaxQuery -> Rules.assert / Rules.forbid / Rules.files
+SyntaxQuery -> Rules.each / Rules.assert / Rules.forbid / Rules.files
 FactProvider -> Rules.repository
 RuleDefinition -> RuleSet -> Rules block
 ```
@@ -48,11 +48,16 @@ Choose the first level that honestly expresses the invariant:
    `FactProvider`. Let custom providers request other providers.
 4. **Typed queries and per-file rules**: compose `SyntaxQuery` roots, file
    scopes, lexical scopes, and typed views. Use
-   `Rules.assert(...)`, `Rules.forbid(...)`, or `Rules.files(...)` when typed
+   `Rules.each(...)`, `Rules.assert(...)`, `Rules.forbid(...)`, or `Rules.files(...)` when typed
    facts are insufficient but parsed syntax is enough.
 5. **Raw visitor**: use `Rules.visitor(...)` / `VisitorRule` with a real
    SwiftSyntax `SyntaxVisitor` only when typed queries cannot express the walk.
    Keep failure collection in the visitor.
+
+The repository's `docs/RULE_RECIPES.md` progression demonstrates
+increasing complexity through paired public-harness fixtures. For model shape,
+select declarations and inspect direct members. File layout must not stand in
+for the declaration that the policy governs. Document the exact matching unit.
 
 ## Workflow
 

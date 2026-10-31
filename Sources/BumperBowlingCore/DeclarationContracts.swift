@@ -27,6 +27,8 @@ public struct DeclarationContract: Equatable, Sendable {
     public let kind: String
     public let context: LexicalContext
     public let explicitAccess: AccessLevel?
+    /// Access written on the declaration or inherited as a lexical default.
+    public let declaredAccess: AccessLevel
     public let effectiveAccess: LexicalAccess
     public let attributes: [AttributeName]
     public let types: [ContractTypeReference]
@@ -57,7 +59,8 @@ public extension SourceFileContext {
             return details.names.map { name in
                 DeclarationContract(
                     name: name, kind: details.kind, context: declaration.bumper.lexicalContext,
-                    explicitAccess: explicitAccess(declaration), effectiveAccess: access.resolve(declaration),
+                    explicitAccess: explicitAccess(declaration), declaredAccess: access.declaredAccess(declaration),
+                    effectiveAccess: access.resolve(declaration),
                     attributes: attributeNames(declaration.asProtocol(WithAttributesSyntax.self)?.attributes ?? []),
                     types: details.types.filter { !["property", "enumCase"].contains(details.kind) || $0.name == name }, path: path, component: component, location: position(of: declaration)
                 )
@@ -75,6 +78,19 @@ private func explicitAccess(_ declaration: DeclSyntax) -> AccessLevel? {
 private struct DeclarationAccessResolver {
     let declarations: [DeclSyntax]
 
+    func declaredAccess(_ declaration: DeclSyntax) -> AccessLevel {
+        if let explicit = explicitAccess(declaration) { return explicit }
+        guard declaration.parent?.is(MemberBlockItemSyntax.self) == true,
+              let enclosing = declaration.ancestors.compactMap({ $0.as(DeclSyntax.self) }).first(where: {
+                  $0.nominalDeclaration != nil || $0.is(ExtensionDeclSyntax.self)
+              }) else { return .internal }
+        if enclosing.is(ProtocolDeclSyntax.self) || declaration.is(EnumCaseDeclSyntax.self) {
+            return declaredAccess(enclosing)
+        }
+        if enclosing.is(ExtensionDeclSyntax.self) { return explicitAccess(enclosing) ?? .internal }
+        return .internal
+    }
+
     func resolve(_ declaration: DeclSyntax, visited: Set<SyntaxIdentifier> = []) -> LexicalAccess {
         guard !visited.contains(declaration.id) else { return .unresolved("Cyclic enclosing declarations") }
         let visited = visited.union([declaration.id])
@@ -86,7 +102,7 @@ private struct DeclarationAccessResolver {
         let enclosing = declaration.ancestors.compactMap { $0.as(DeclSyntax.self) }.first {
             $0.nominalDeclaration != nil || $0.is(ExtensionDeclSyntax.self)
         }
-        var level = explicitAccess(declaration) ?? .internal
+        var level = declaredAccess(declaration)
         if let extensionNode = declaration.as(ExtensionDeclSyntax.self) {
             let name = extensionNode.extendedType.trimmedDescription
             let targets = declarations.filter { candidate in
@@ -103,9 +119,6 @@ private struct DeclarationAccessResolver {
         if let enclosing {
             if enclosing.is(ProtocolDeclSyntax.self) || declaration.is(EnumCaseDeclSyntax.self) {
                 return resolve(enclosing, visited: visited)
-            }
-            if let extensionNode = enclosing.as(ExtensionDeclSyntax.self), explicitAccess(declaration) == nil {
-                level = explicitAccess(DeclSyntax(extensionNode)) ?? .internal
             }
             switch resolve(enclosing, visited: visited) {
             case .resolved(let cap): level = cappedAccess(level, by: cap)
