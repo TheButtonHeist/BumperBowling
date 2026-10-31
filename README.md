@@ -87,25 +87,29 @@ See the [worked examples](docs/RULE_RECIPES.md) and [authoring guide](docs/RULE_
 
 ## Start with one repeated review comment
 
-This branch contains an unreleased, breaking update. It requires macOS 15 or
-later and Swift 6.4. See the [migration guide](docs/MIGRATION.md) for existing configurations.
+Version 0.7.0 requires macOS 15 or later and Swift 6.4. It changes the public
+API and package workflow. See the [migration guide](docs/MIGRATION.md) before
+upgrading an existing configuration.
 
-Build the tool from this checkout:
+Build the tool from the release:
 
 ```bash
+git clone --branch 0.7.0 https://github.com/TheButtonHeist/BumperBowling.git
+cd BumperBowling
 swift build --product bumper
 ```
 
 Initialize the repository you want to check:
 
 ```bash
-/path/to/BumperBowling/.build/debug/bumper init . --package-path /path/to/BumperBowling
+/path/to/BumperBowling/.build/debug/bumper init .
 ```
 
-The explicit package path uses your checkout during development. Without it,
-the starter depends on Bumper’s `main` branch. Commit the generated
-`Package.resolved` to pin its revision. After this update reaches `main`, other
-repositories can use that default.
+The starter depends on Bumper’s `main` branch. Commit the generated
+`Package.resolved` to pin its revision. To use your own checkout during
+development, add `--package-path /path/to/BumperBowling`. To keep the rules
+package on this release, replace `branch: "main"` with `exact: "0.7.0"` in
+`.bumper/Package.swift` before the first build.
 
 The starter is an ordinary Swift package:
 

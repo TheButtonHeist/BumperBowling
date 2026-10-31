@@ -1,6 +1,6 @@
 # Migrate to the SwiftLint-backed DSL
 
-This is an unreleased breaking change. Keep using the previous release if you
+Version 0.7.0 is a breaking change. Keep using version 0.6.0 if you
 need its architecture DSL or other retired features. Do not replace an existing
 configuration until its required conventions have passing and failing examples
 on the new path.
@@ -18,7 +18,7 @@ The verified toolchain is Swift 6.4 with SwiftLint 0.63.3 and SwiftSyntax
 ## Move the package first
 
 1. Preserve `BumperBowling.swift` and the old `.bumper` directory outside the new destination.
-2. Run `bumper init` with this checkout’s `--package-path` during development.
+2. Run `bumper init` in the new destination. Use `--package-path` for a local development checkout.
 3. Move rules into named `SyntaxRule` or `RepositoryRule` types.
 4. Move fixtures into the generated ordinary test target.
 5. Register the types in `Sources/BumperRulesRunner/main.swift`.

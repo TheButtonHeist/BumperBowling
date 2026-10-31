@@ -1,6 +1,7 @@
 # Release checks
 
-This SwiftLint-backed DSL is unreleased and changes public APIs and the package workflow.
+The SwiftLint-backed DSL starts with version 0.7.0. It changes public APIs and
+the package workflow.
 
 1. Run strict SwiftLint, the full package tests, repository rule tests, and self-lint.
 2. Run `Scripts/verify-rule-journey.sh` from the checkout.
