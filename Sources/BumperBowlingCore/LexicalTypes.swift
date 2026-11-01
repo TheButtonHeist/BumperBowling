@@ -51,6 +51,7 @@ private struct LexicalTypeResolver {
     func resolve(
         _ type: TypeSyntax,
         aliases: [TypeAliasDeclSyntax] = [],
+        activeAliases: Set<SyntaxIdentifier> = [],
         remainingSteps: Int = 256,
         remainingQualifiedDepth: Int = 32
     ) -> LexicalTypeResolution {
@@ -58,6 +59,7 @@ private struct LexicalTypeResolver {
         var optional = false
         var attributes: [AttributeSyntax] = []
         var aliasChain = aliases
+        var activeAliases = activeAliases
         guard remainingSteps > 0 else { return .unresolved(.depthLimit) }
         for step in 0..<remainingSteps {
             if let attributed = current.as(AttributedTypeSyntax.self) {
@@ -97,7 +99,7 @@ private struct LexicalTypeResolver {
                 guard identifier.genericArgumentClause == nil else { return .unresolved(.unsupportedSyntax) }
             } else if let member = current.as(MemberTypeSyntax.self), member.genericArgumentClause == nil {
                 guard remainingQualifiedDepth > 0 else { return .unresolved(.depthLimit) }
-                switch resolve(member.baseType, aliases: aliasChain, remainingSteps: remainingSteps - step - 1,
+                switch resolve(member.baseType, aliases: aliasChain, activeAliases: activeAliases, remainingSteps: remainingSteps - step - 1,
                                remainingQualifiedDepth: remainingQualifiedDepth - 1) {
                 case .resolved(let base):
                     guard !base.isOptional, base.attributes.isEmpty,
@@ -105,6 +107,7 @@ private struct LexicalTypeResolver {
                           base.declaration?.asProtocol(WithGenericParametersSyntax.self)?.genericParameterClause == nil else {
                         return .unresolved(.unsupportedSyntax)
                     }
+                    // Completed owner expansions count toward depth, not cycles.
                     aliasChain = base.aliases
                     lookup = select(owner.memberBlock.descendants(of: DeclSyntax.self).filter {
                         $0.parent?.is(MemberBlockItemSyntax.self) == true && enclosingScope(of: $0)?.id == owner.memberBlock.id
@@ -119,7 +122,7 @@ private struct LexicalTypeResolver {
             case .unresolved(let failure): return .unresolved(failure)
             case .resolved(let declaration):
                 if let alias = declaration.as(TypeAliasDeclSyntax.self) {
-                    guard !aliasChain.contains(where: { $0.id == alias.id }) else { return .unresolved(.cycle) }
+                    guard activeAliases.insert(alias.id).inserted else { return .unresolved(.cycle) }
                     guard aliasChain.count < maximumAliasDepth else { return .unresolved(.depthLimit) }
                     guard alias.genericParameterClause == nil else { return .unresolved(.unsupportedSyntax) }
                     aliasChain.append(alias)
@@ -135,7 +138,16 @@ private struct LexicalTypeResolver {
 
     private func declaration(named name: String, from node: TypeSyntax) -> DeclarationLookup {
         for ancestor in node.ancestors {
-            if ancestor.asProtocol(WithGenericParametersSyntax.self)?.genericParameterClause?.parameters.contains(where: { $0.name.text == name }) == true {
+            let genericScopes: [Syntax]
+            if let extensionDecl = ancestor.as(ExtensionDeclSyntax.self) {
+                guard let target = extensionDecl.sameFileExtendedNominal else { return .unresolved(.unsupportedSyntax) }
+                genericScopes = [Syntax(target)] + target.ancestors
+            } else {
+                genericScopes = [ancestor]
+            }
+            if genericScopes.contains(where: {
+                $0.asProtocol(WithGenericParametersSyntax.self)?.genericParameterClause?.parameters.contains(where: { $0.name.text == name }) == true
+            }) {
                 return .unresolved(.genericParameter(name))
             }
             guard isScope(ancestor) else { continue }

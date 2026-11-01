@@ -62,6 +62,8 @@ import Testing
         ("var callback: Library.Handler?", .unknownName("Library")),
         ("typealias Handler<T> = (T) -> Void; var callback: Handler<Int>?", .unsupportedSyntax),
         ("typealias First = Second; typealias Second = First; var callback: First?", .cycle),
+        ("struct Owner { typealias Handler = Owner.Handler }; var callback: Owner.Handler?", .cycle),
+        ("struct Owner { typealias Handler = Alias }; typealias Alias = Owner.Handler; var callback: Alias?", .cycle),
         ("#if FLAG\ntypealias Handler = () -> Void\n#else\ntypealias Handler = @Sendable () -> Void\n#endif\nvar callback: Handler?", .ambiguousName("Handler")),
         ("protocol Box { associatedtype Handler; var callback: Handler? { get } }", .unsupportedSyntax),
     ]
@@ -127,6 +129,40 @@ func optionalWrappersUseABoundedLoop(count: Int) throws {
     let file = typeContext(source)
     let type = try #require(variables().matches(in: file).flatMap { $0.node.contractTypes }.last)
     guard case .unresolved(.depthLimit) = file.resolveType(type) else { Issue.record("Expected the qualified owner limit"); return }
+}
+
+@Test func extensionGenericParametersShadowFileAliases() throws {
+    let examples: [(String, LexicalTypeFailure?)] = [
+        ("struct Box<Handler> {}; extension Box { var completion: Handler? { nil } }", .genericParameter("Handler")),
+        ("struct Outer<Handler> { struct Box {} }; extension Outer.Box { var completion: Handler? { nil } }", .genericParameter("Handler")),
+        ("extension Imported { var completion: Handler? { nil } }", .unsupportedSyntax),
+        ("struct Box {}; extension Box { var completion: Handler? { nil } }", nil),
+    ]
+    for (source, expected) in examples {
+        let file = typeContext("typealias Handler = () -> Void\n" + source)
+        let type = try #require(variables().matches(in: file).flatMap { $0.node.contractTypes }.last)
+        if let expected {
+            guard case .unresolved(let failure) = file.resolveType(type) else { Issue.record("Unexpected resolution: \(source)"); continue }
+            #expect(failure == expected)
+        } else {
+            guard case .resolved(let callback) = file.resolveType(type) else { Issue.record("Expected the file alias"); continue }
+            #expect(callback.function != nil)
+            #expect(callback.isOptional)
+        }
+    }
+}
+
+@Test func repeatedQualifiedOwnerAliasesAreNotCycles() throws {
+    let file = typeContext("""
+    struct Owner { typealias Next = Owner; typealias Handler = () -> Void }
+    var completion: Owner.Next.Next.Handler?
+    """)
+    let type = try #require(variables().matches(in: file).flatMap { $0.node.contractTypes }.last)
+    guard case .resolved(let callback) = file.resolveType(type) else { Issue.record("Expected a callback through reused owner aliases"); return }
+    #expect(callback.function != nil)
+    #expect(callback.isOptional)
+    #expect(callback.aliases.map { $0.name.text } == ["Next", "Next", "Handler"])
+    guard case .unresolved(.depthLimit) = file.resolveType(type, maximumAliasDepth: 2) else { Issue.record("Repeated aliases must consume depth"); return }
 }
 
 private func typeContext(_ source: String) -> SourceFileContext {

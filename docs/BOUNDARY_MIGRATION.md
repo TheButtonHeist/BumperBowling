@@ -87,11 +87,14 @@ Attributes on a nested callback parameter do not isolate the containing callback
 Resolution supports optional and parenthesized wrappers and explicit file-local
 aliases in the nearest lexical scope. Qualified members of a uniquely resolved,
 nongeneric same-file nominal are supported. Type names are looked up separately
-from variable and function names. Generic parameters shadow outer aliases.
+from variable and function names. Generic parameters shadow outer aliases,
+including inside extensions of same-file types. Unknown extension targets stay
+unresolved. Function-local and closure-local types cannot supply an extension target.
 
 Imported names, inherited or extension-provided qualified members, generic
 substitutions, and unsupported syntax stay unresolved. Duplicate conditional
-aliases are ambiguous. Cycles have a distinct failure. Resolution stops at the default 32-alias bound
+aliases are ambiguous. Cycles have a distinct failure. Reusing a qualified owner
+alias is allowed and still consumes the alias budget. Resolution stops at the default 32-alias bound
 or a fixed 256-step bound for each outer-type walk. Wrappers and aliases use a
 loop. Qualified-owner recursion has a separate 32-level bound. Syntax from another file context is rejected. This is a bounded syntax
 walk over SwiftLint's existing tree; it creates no parser or shared cache.

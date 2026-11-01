@@ -60,13 +60,7 @@ private func declarationAccess(_ node: DeclSyntax, visited: Set<SyntaxIdentifier
     }
     if enclosing?.is(CodeBlockSyntax.self) == true || enclosing?.is(ClosureExprSyntax.self) == true { return .resolved(.private) }
     if let extensionDecl = node.as(ExtensionDeclSyntax.self) {
-        guard let path = nominalPath(extensionDecl.extendedType) else { return .unresolved }
-        let candidates = node.root.descendants(of: DeclSyntax.self).filter { declaration in
-            guard declaration.isProtocol(DeclGroupSyntax.self), !declaration.is(ExtensionDeclSyntax.self),
-                  let name = declaration.asProtocol(NamedDeclSyntax.self)?.name.text else { return false }
-            return Array(declaration.enclosingNominalNames.reversed()) + [name] == path
-        }
-        guard candidates.count == 1, let target = candidates.first else { return .unresolved }
+        guard let target = extensionDecl.sameFileExtendedNominal else { return .unresolved }
         return declarationAccess(target, visited: visited)
     }
     guard let enclosing, let owner = enclosing.as(DeclSyntax.self) else { return .resolved(node.explicitAccess ?? .internal) }
@@ -76,6 +70,19 @@ private func declarationAccess(_ node: DeclSyntax, visited: Set<SyntaxIdentifier
     // An extension modifier supplies member defaults; it does not cap explicitly visible members.
     let defaultAccess = owner.is(ExtensionDeclSyntax.self) ? owner.explicitAccess ?? .internal : .internal
     return .resolved(min(node.explicitAccess ?? defaultAccess, ownerAccess))
+}
+
+extension ExtensionDeclSyntax {
+    var sameFileExtendedNominal: DeclSyntax? {
+        guard let path = nominalPath(extendedType) else { return nil }
+        let candidates = root.descendants(of: DeclSyntax.self).filter { declaration in
+            guard declaration.isProtocol(DeclGroupSyntax.self), !declaration.is(ExtensionDeclSyntax.self),
+                  let name = declaration.asProtocol(NamedDeclSyntax.self)?.name.text,
+                  !declaration.ancestors.contains(where: { $0.is(CodeBlockSyntax.self) || $0.is(ClosureExprSyntax.self) }) else { return false }
+            return Array(declaration.enclosingNominalNames.reversed()) + [name] == path
+        }
+        return candidates.count == 1 ? candidates.first : nil
+    }
 }
 
 private func nominalPath(_ type: TypeSyntax) -> [String]? {

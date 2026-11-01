@@ -66,6 +66,20 @@ import Testing
     #expect(functions().matches(in: file).map { $0.node.effectiveAccess } == [.resolved(.public), .unresolved])
 }
 
+@Test(arguments: [
+    "func scratch() { enum Outer { struct Model {} } }",
+    "let scratch = { enum Outer { struct Model {} } }",
+])
+func extensionAccessIgnoresFunctionAndClosureLocalTypes(local: String) throws {
+    let file = declarationContext("""
+    public enum Outer { public struct Model {} }
+    extension Outer.Model { public func value() -> Int { 0 } }
+    \(local)
+    """)
+    let method = try #require(functions().matches(in: file).first { $0.name == "value" })
+    #expect(method.node.effectiveAccess == .resolved(.public))
+}
+
 private func declarationContext(_ source: String) -> SourceFileContext {
     SourceFileContext(file: SwiftLintFile(contents: source), root: FileManager.default.temporaryDirectory)
 }
