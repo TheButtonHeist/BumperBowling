@@ -17,3 +17,8 @@ qualified names, macro expansion, and indirect calls require explicit policy
 choices. SIL, LLVM IR, and compiler integration are outside this product.
 
 See the [authoring guide](RULE_AUTHORING.md) and [worked examples](RULE_RECIPES.md).
+
+Declaration access, explicit contract types, and bounded file-local outer-type
+resolution are available as [syntax helpers](BOUNDARY_MIGRATION.md). Unknown,
+ambiguous, generic, cyclic, and imported cases remain explicit; they are not
+compiler symbol resolution. Consumers choose and test their uncertainty policy.
