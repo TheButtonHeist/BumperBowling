@@ -137,22 +137,29 @@ private struct LexicalTypeResolver {
     }
 
     private func declaration(named name: String, from node: TypeSyntax) -> DeclarationLookup {
-        for ancestor in node.ancestors {
-            let genericScopes: [Syntax]
+        let candidates = declarations.filter { typeName($0) == name }
+        var scopes = node.ancestors[...]
+        var extensions: Set<SyntaxIdentifier> = []
+        while let ancestor = scopes.first {
+            scopes = scopes.dropFirst()
             if let extensionDecl = ancestor.as(ExtensionDeclSyntax.self) {
-                guard let target = extensionDecl.sameFileExtendedNominal else { return .unresolved(.unsupportedSyntax) }
-                genericScopes = [Syntax(target)] + target.ancestors
-            } else {
-                genericScopes = [ancestor]
+                guard extensions.insert(extensionDecl.id).inserted, extensions.count <= 32 else { return .unresolved(.depthLimit) }
+                guard let target = extensionDecl.sameFileExtendedNominal,
+                      let owner = target.asProtocol(DeclGroupSyntax.self) else { return .unresolved(.unsupportedSyntax) }
+                scopes = ([Syntax(owner.memberBlock), Syntax(target)] + target.ancestors)[...]
+                continue
             }
-            if genericScopes.contains(where: {
-                $0.asProtocol(WithGenericParametersSyntax.self)?.genericParameterClause?.parameters.contains(where: { $0.name.text == name }) == true
-            }) {
+            if ancestor.asProtocol(WithGenericParametersSyntax.self)?.genericParameterClause?.parameters.contains(where: { $0.name.text == name }) == true {
                 return .unresolved(.genericParameter(name))
             }
+            if let owner = ancestor.as(DeclSyntax.self), owner.isProtocol(DeclGroupSyntax.self), candidates.contains(where: {
+                enclosingScope(of: $0)?.parent?.as(ExtensionDeclSyntax.self)?.sameFileExtendedNominal?.id == owner.id
+            }) {
+                return .unresolved(.unsupportedSyntax)
+            }
             guard isScope(ancestor) else { continue }
-            let candidates = declarations.filter { typeName($0) == name && enclosingScope(of: $0)?.id == ancestor.id }
-            if !candidates.isEmpty { return select(candidates, name: name) }
+            let matches = candidates.filter { enclosingScope(of: $0)?.id == ancestor.id }
+            if !matches.isEmpty { return select(matches, name: name) }
         }
         return .unresolved(.unknownName(name))
     }

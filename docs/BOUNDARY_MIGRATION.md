@@ -88,7 +88,11 @@ Resolution supports optional and parenthesized wrappers and explicit file-local
 aliases in the nearest lexical scope. Qualified members of a uniquely resolved,
 nongeneric same-file nominal are supported. Type names are looked up separately
 from variable and function names. Generic parameters shadow outer aliases,
-including inside extensions of same-file types. Unknown extension targets stay
+including inside extensions of same-file types. Extension lookup inspects the
+target's own member scope before file-level aliases. It also follows enclosing
+extension targets. Matching members in other extensions remain unresolved
+instead of selecting a file-level alias. Extension scope expansion stops after
+32 targets. Unknown extension targets stay
 unresolved. Function-local and closure-local types cannot supply an extension target.
 
 Imported names, inherited or extension-provided qualified members, generic

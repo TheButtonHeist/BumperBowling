@@ -81,3 +81,22 @@ import Testing
         ).matches).count == 1)
     }
 }
+
+@Test func callbackRecipeUsesTheExtendedTypesOwnAlias() throws {
+    let harness = RuleTestHarness(CallbackIsolationRecipe.self)
+    #expect(try harness.evaluate([.swift("Sources/Valid.swift", source: """
+    typealias Handler = () -> Void
+    struct Box { typealias Handler = @Sendable () -> Void }
+    extension Box { var completion: Handler? { nil } }
+    """)]).isEmpty)
+    let failing = try harness.evaluate([.swift("Sources/Invalid.swift", source: """
+    typealias Handler = @Sendable () -> Void
+    struct Box { typealias Handler = () -> Void }
+    extension Box { var completion: Handler? { nil } }
+    """)])
+    #expect(failing.count == 1)
+    #expect(failing.filter(ViolationMatcher(
+        id: "recipes.callbacks", path: "Sources/Invalid.swift", line: 3, column: 21,
+        reason: "Declare @Sendable or a known global actor on the callback type."
+    ).matches).count == 1)
+}

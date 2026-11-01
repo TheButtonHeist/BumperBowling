@@ -165,6 +165,68 @@ func optionalWrappersUseABoundedLoop(count: Int) throws {
     guard case .unresolved(.depthLimit) = file.resolveType(type, maximumAliasDepth: 2) else { Issue.record("Repeated aliases must consume depth"); return }
 }
 
+@Test(arguments: [false, true])
+func extensionMemberAliasesShadowFileAliases(isolated: Bool) throws {
+    let file = typeContext("""
+    typealias Handler = \(isolated ? "" : "@Sendable ")() -> Void
+    struct Box { typealias Handler = \(isolated ? "@Sendable " : "")() -> Void }
+    extension Box { var completion: Handler? { nil } }
+    """)
+    let type = try #require(variables().matches(in: file).flatMap { $0.node.contractTypes }.last)
+    guard case .resolved(let callback) = file.resolveType(type) else { Issue.record("Expected the member alias"); return }
+    #expect(callback.function != nil)
+    #expect(callback.isOptional)
+    #expect(callback.attributes.map { $0.attributeName.trimmedDescription } == (isolated ? ["Sendable"] : []))
+    #expect(callback.aliases.first?.enclosingNominalNames == ["Box"])
+}
+
+@Test func nestedExtensionScopesUseMembersBeforeOuterGenericsAndFileAliases() throws {
+    let file = typeContext("""
+    typealias Handler = () -> Void
+    struct Outer<Handler> { struct Box { typealias Handler = @Sendable () -> Void } }
+    extension Outer.Box { var completion: Handler? { nil } }
+    """)
+    let type = try #require(variables().matches(in: file).flatMap { $0.node.contractTypes }.last)
+    guard case .resolved(let callback) = file.resolveType(type) else { Issue.record("Expected the nearest member alias"); return }
+    #expect(callback.attributes.map { $0.attributeName.trimmedDescription } == ["Sendable"])
+}
+
+@Test func enclosingExtensionTargetsStillContributeTheirGenericParameters() throws {
+    let file = typeContext("""
+    typealias Handler = () -> Void
+    struct Outer<Handler> {}
+    extension Outer { struct Box {} }
+    extension Outer.Box { var completion: Handler? { nil } }
+    """)
+    let type = try #require(variables().matches(in: file).flatMap { $0.node.contractTypes }.last)
+    guard case .unresolved(.genericParameter("Handler")) = file.resolveType(type) else { Issue.record("Expected the outer generic parameter"); return }
+}
+
+@Test func aliasesFromOtherExtensionsDoNotFallBackToTheFileAlias() throws {
+    let file = typeContext("""
+    typealias Handler = @Sendable () -> Void
+    struct Box {}
+    extension Box { typealias Handler = () -> Void }
+    extension Box { var completion: Handler? { nil } }
+    """)
+    let type = try #require(variables().matches(in: file).flatMap { $0.node.contractTypes }.last)
+    guard case .unresolved(.unsupportedSyntax) = file.resolveType(type) else { Issue.record("Another extension can shadow the file alias"); return }
+}
+
+@Test func aliasesDeclaredInTheCurrentExtensionKeepTheirPrecedence() throws {
+    let file = typeContext("""
+    typealias Handler = () -> Void
+    struct Box {}
+    extension Box {
+        typealias Handler = @Sendable () -> Void
+        var completion: Handler? { nil }
+    }
+    """)
+    let type = try #require(variables().matches(in: file).flatMap { $0.node.contractTypes }.last)
+    guard case .resolved(let callback) = file.resolveType(type) else { Issue.record("Expected this extension's own alias"); return }
+    #expect(callback.attributes.map { $0.attributeName.trimmedDescription } == ["Sendable"])
+}
+
 private func typeContext(_ source: String) -> SourceFileContext {
     SourceFileContext(file: SwiftLintFile(contents: source), root: FileManager.default.temporaryDirectory)
 }
