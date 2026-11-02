@@ -46,6 +46,10 @@ with `node` and `file`. `file.syntax` is SwiftLint's cached tree. Never reparse 
 
 Common query roots include `structs()`, `functions()`, `initializers()`,
 `variables()`, `typeAliases()`, `functionCalls()`, and `macroExpansions()`.
+Use `imports(["Network"])` for written root-module imports. Boundary checks can
+use `Rules.importOwnership`, `Rules.forbiddenImports`, or `Rules.sourceOwnership`
+inside their named rule body. See the [boundary migration guide](BOUNDARY_MIGRATION.md)
+for declaration access, contract types, alias limits, and complete recipes.
 Use a generic query for everything else:
 
 ```swift
@@ -78,6 +82,7 @@ Scopes use repository-relative paths:
 .under("Sources/Features")
 .files(["Sources/App/Routes.swift"])
 RuleScope.repository.excluding(.under("Sources/Generated"))
+.under("Sources/Transport").union(.files(["Sources/TLS.swift"]))
 ```
 
 A custom scope can inspect `SourceFileContext`. `.under` matches path components,

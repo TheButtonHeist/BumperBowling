@@ -14,11 +14,16 @@ rule; SwiftSyntax supplies the typed source tree.
 | `Rules.require(condition, at:message:)` | Report at a match when a Boolean condition is false |
 | `Rules.require(inSameFile:at:message:)` | Require at least one companion from the anchor's file and syntax tree |
 | `Rules.forbid(pattern, scope:)` | Report each forbidden match with a repair message |
+| `Rules.importOwnership(modules, allowed:)` | Keep root-module imports inside allowed scopes |
+| `Rules.forbiddenImports(modules, scope:)` | Reject module imports in a boundary |
+| `Rules.sourceOwnership(owners, scope:)` | Require one owner per scanned Swift file |
 | `Rules.each(pattern, scope:)` | Return raw located failures from each selected match |
 | `Rules.files(scope:)` | Use arbitrary Swift or a visitor over one parsed file |
 | `Rules.repository(scope:collect:check:)` | Collect typed observations, then build checks for scoped subjects |
 | `RuleScope` | A file predicate with repository-relative path conveniences |
 | `SyntaxQuery<Node>` / `SyntaxPattern` | Typed, composable SwiftSyntax matching |
+| `DeclSyntaxProtocol.explicitAccess` / `.effectiveAccess` / `.contractTypes` | Inspect explicit declaration contracts and lexical visibility |
+| `SourceFileContext.resolveType` | Bounded outer-type, optional, attribute, and same-file alias inspection |
 | `SyntaxMatch.failure(message:)` | Construct a finding at a matched node |
 | `RuleTestHarness` / `ViolationMatcher` | Evaluate examples and assert exact native findings |
 

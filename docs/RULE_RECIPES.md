@@ -64,3 +64,14 @@ models immutable outside named implementation declarations.
 
 Run `bumper test .` for repository recipes and policies. The journey check runs
 the generated preview example and proves sharing through a second rule package.
+
+## Retain source boundaries after migration
+
+[Boundary recipes](../.bumper/Sources/BumperRules/BoundaryRecipes.swift) demonstrate
+import ownership, complete ownership of scanned Swift files, named exported
+contracts, and callback isolation. Their [paired examples](../.bumper/Tests/BumperRulesTests/BoundaryRecipeTests.swift)
+run with `bumper test .`. They are examples to register in a consumer, not new
+restrictions on Bumper's own source.
+
+See [boundary migration](BOUNDARY_MIGRATION.md) for the syntax limits, unresolved
+policies, and a direct native SwiftLint comparison.

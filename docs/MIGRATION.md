@@ -86,10 +86,13 @@ instances are not introduced by this change.
 architecture reports are retired in this product direction. They are not
 silently preserved by the new DSL.
 
-Repository import and ownership conventions can use ordinary queries and scopes.
-A full architecture consumer needs its own explicit port and fixtures before
-upgrading. External consumer usage is unknown; this change cannot promise full
-architecture parity.
+Repository import and source ownership conventions have small
+[boundary helpers and executable migration recipes](BOUNDARY_MIGRATION.md):
+`Rules.importOwnership`, `Rules.forbiddenImports`, and `Rules.sourceOwnership`.
+Declaration access, contract types, and bounded same-file alias inspection are
+available directly over the existing syntax tree. These are helpers, not the
+retired fact-store API. A full architecture consumer still needs an explicit
+port and fixtures. Graph configuration and reports are not preserved.
 
 The repository’s parser, process, and declaration-level mutation policies are
 ported. Direct parsing is now forbidden everywhere in Bumper source because

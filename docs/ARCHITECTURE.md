@@ -18,7 +18,8 @@ Repository Swift package
 
 ## Ownership
 
-Bumper owns the check builders, typed query vocabulary, repository-relative scopes,
+Bumper owns the check builders, typed query vocabulary, boundary checks,
+lexical declaration and outer-type inspection, repository-relative scopes,
 diagnostic construction, paired fixture support, package starter, commands,
 and input and process bounds.
 
@@ -95,3 +96,11 @@ or faster clean build.
 
 Collection is supplied to each selected subject file. Keep subject scopes narrow
 when repository aggregation is expensive; no shared aggregate cache is implied.
+
+## Shared syntax helpers
+
+Boundary helpers compose existing file checks. Declaration and alias helpers
+read the cached SwiftSyntax tree and return explicit resolved or unresolved
+values. They add no compiler lookup, parser, fact store, or execution phase.
+The [boundary migration guide](BOUNDARY_MIGRATION.md) records their limits and
+pairs the higher-level recipes with consumer fixtures and a native comparison.
