@@ -152,9 +152,10 @@ private struct LexicalTypeResolver {
             if ancestor.asProtocol(WithGenericParametersSyntax.self)?.genericParameterClause?.parameters.contains(where: { $0.name.text == name }) == true {
                 return .unresolved(.genericParameter(name))
             }
-            if let owner = ancestor.as(DeclSyntax.self), owner.isProtocol(DeclGroupSyntax.self), candidates.contains(where: {
-                enclosingScope(of: $0)?.parent?.as(ExtensionDeclSyntax.self)?.sameFileExtendedNominal?.id == owner.id
-            }) {
+            if let owner = ancestor.as(DeclSyntax.self), let group = owner.asProtocol(DeclGroupSyntax.self),
+               group.inheritanceClause != nil || candidates.contains(where: {
+                   enclosingScope(of: $0)?.parent?.as(ExtensionDeclSyntax.self)?.sameFileExtendedNominal?.id == owner.id
+               }) {
                 return .unresolved(.unsupportedSyntax)
             }
             guard isScope(ancestor) else { continue }

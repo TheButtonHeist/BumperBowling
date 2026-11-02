@@ -3,7 +3,7 @@ import SwiftSyntax
 /// Select written imports by their root module, including selective imports.
 public func imports(_ modules: Set<String>) -> SyntaxQuery<ImportDeclSyntax> {
     SyntaxQuery<ImportDeclSyntax>().filter { match in
-        match.node.path.first.map { modules.contains($0.name.text) } ?? false
+        match.node.path.first.map { modules.contains($0.name.text.filter { $0 != "`" }) } ?? false
     }
 }
 

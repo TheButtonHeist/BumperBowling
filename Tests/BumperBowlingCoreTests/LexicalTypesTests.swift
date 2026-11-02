@@ -227,6 +227,38 @@ func extensionMemberAliasesShadowFileAliases(isolated: Bool) throws {
     #expect(callback.attributes.map { $0.attributeName.trimmedDescription } == ["Sendable"])
 }
 
+@Test(arguments: [false, true], [false, true])
+func inheritedAliasesDoNotResolveToFileAliases(isolated: Bool, usesProtocol: Bool) throws {
+    let base = usesProtocol ? "protocol" : "class"
+    let child = usesProtocol ? "struct" : "class"
+    let file = typeContext("""
+    typealias Handler = \(isolated ? "" : "@Sendable ")() -> Void
+    \(base) Base { typealias Handler = \(isolated ? "@Sendable " : "")() -> Void }
+    \(child) Child: Base { var completion: Handler? { nil } }
+    extension Child { var onEvent: Handler? { nil } }
+    """)
+    let types = variables().matches(in: file).flatMap { $0.node.contractTypes }
+    #expect(types.count == 2)
+    for type in types {
+        guard case .unresolved(.unsupportedSyntax) = file.resolveType(type) else { Issue.record("Inherited lookup must not guess a file alias"); continue }
+    }
+}
+
+@Test func ownAliasesStillResolveInsideInheritedScopes() throws {
+    let file = typeContext("""
+    class Base {}
+    class Child: Base { typealias Handler = @Sendable () -> Void; var completion: Handler? { nil } }
+    extension Child { var onEvent: Handler? { nil } }
+    """)
+    let types = variables().matches(in: file).flatMap { $0.node.contractTypes }
+    #expect(types.count == 2)
+    for type in types {
+        guard case .resolved(let callback) = file.resolveType(type) else { Issue.record("Expected the child's own alias"); continue }
+        #expect(callback.function != nil)
+        #expect(callback.attributes.map { $0.attributeName.trimmedDescription } == ["Sendable"])
+    }
+}
+
 private func typeContext(_ source: String) -> SourceFileContext {
     SourceFileContext(file: SwiftLintFile(contents: source), root: FileManager.default.temporaryDirectory)
 }

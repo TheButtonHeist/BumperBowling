@@ -23,7 +23,8 @@ public enum NetworkBoundary: SyntaxRule {
 Use `Rules.forbiddenImports(["UIKit", "SwiftUI"], scope: .under("Sources/Domain"))`
 for a boundary that cannot import UI. `imports(_:)` selects root module names;
 `import struct Network.NWEndpoint` counts as importing `Network`. `NetworkExtras`
-does not. Conditional branches are inspected as written.
+does not. Backtick-escaped module names match the same modules. Conditional
+branches are inspected as written.
 
 `Rules.sourceOwnership` accepts the owner scopes, including exact-file owners
 such as `.files(["Sources/TLS.swift"])`. It requires one owner per scanned Swift file. No owner and overlapping owners both
@@ -94,6 +95,12 @@ extension targets. Matching members in other extensions remain unresolved
 instead of selecting a file-level alias. Extension scope expansion stops after
 32 targets. Unknown extension targets stay
 unresolved. Function-local and closure-local types cannot supply an extension target.
+
+After checking a type's own members and generic parameters, unqualified name
+lookup stops at scopes with inheritance or protocol conformance. It returns
+unresolved instead of selecting an outer alias that an inherited member could
+shadow. This applies inside the type and its extensions; it does not resolve
+inherited members.
 
 Imported names, inherited or extension-provided qualified members, generic
 substitutions, and unsupported syntax stay unresolved. Duplicate conditional

@@ -7,18 +7,24 @@ import Testing
     let passing = try harness.evaluate([
         .swift("Sources/Transport/Socket.swift", source: "import Network"),
         .swift("Sources/TLS.swift", source: "@preconcurrency import Network"),
+        .swift("Sources/Transport/Escaped.swift", source: "import `Network`"),
         .swift("Sources/Domain/Model.swift", source: "import Foundation\nimport NetworkExtras"),
     ])
     #expect(passing.isEmpty)
     let failing = try harness.evaluate([
         .swift("Sources/TransportExtras/Socket.swift", source: "import Network"),
         .swift("Sources/Domain/Model.swift", source: "import struct Network.NWEndpoint"),
+        .swift("Sources/Domain/Escaped.swift", source: "import `Network`"),
+        .swift("Sources/Domain/EscapedSelective.swift", source: "import struct `Network`.NWEndpoint"),
     ])
-    #expect(failing.count == 2)
-    for path in ["Sources/TransportExtras/Socket.swift", "Sources/Domain/Model.swift"] {
+    #expect(failing.count == 4)
+    for (path, module) in [
+        ("Sources/TransportExtras/Socket.swift", "Network"), ("Sources/Domain/Model.swift", "Network"),
+        ("Sources/Domain/Escaped.swift", "`Network`"), ("Sources/Domain/EscapedSelective.swift", "`Network`"),
+    ] {
         #expect(failing.filter(ViolationMatcher(
             id: "boundary.network", path: path, line: 1, column: 1,
-            reason: "Import Network is outside its allowed boundary. Allowed locations: (at or under \"Sources/Transport\") or (\"Sources/TLS.swift\"). Move the code that needs this import to an allowed location."
+            reason: "Import \(module) is outside its allowed boundary. Allowed locations: (at or under \"Sources/Transport\") or (\"Sources/TLS.swift\"). Move the code that needs this import to an allowed location."
         ).matches).count == 1)
     }
 }
@@ -30,10 +36,10 @@ import Testing
         .swift("Sources/Domain/Model.swift", source: "import Foundation\nimport UIKitExtras"),
     ]).isEmpty)
     let failing = try harness.evaluate([
-        .swift("Sources/Domain/Model.swift", source: "import UIKit\nimport SwiftUI"),
+        .swift("Sources/Domain/Model.swift", source: "import UIKit\nimport SwiftUI\nimport `UIKit`\nimport `SwiftUI`"),
     ])
-    #expect(failing.count == 2)
-    for (line, module) in [(1, "UIKit"), (2, "SwiftUI")] {
+    #expect(failing.count == 4)
+    for (line, module) in [(1, "UIKit"), (2, "SwiftUI"), (3, "`UIKit`"), (4, "`SwiftUI`")] {
         #expect(failing.filter(ViolationMatcher(
             id: "boundary.domain", path: "Sources/Domain/Model.swift", line: line, column: 1,
             reason: "Import \(module) is forbidden in this scope: at or under \"Sources/Domain\". Remove this dependency or move the code outside this scope."
