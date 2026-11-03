@@ -262,3 +262,25 @@ func inheritedAliasesDoNotResolveToFileAliases(isolated: Bool, usesProtocol: Boo
 private func typeContext(_ source: String) -> SourceFileContext {
     SourceFileContext(file: SwiftLintFile(contents: source), root: FileManager.default.temporaryDirectory)
 }
+
+@Test func `getter aliases do not leak into stored callback contracts`() throws {
+    let file = typeContext("""
+    typealias Handler = @Sendable () -> Void
+    struct Screen {
+        var count: Int {
+            typealias Handler = () -> Void
+            let local: Handler? = nil
+            _ = local
+            return 0
+        }
+        var callback: Handler?
+    }
+    """)
+    for (name, expectedAttributes) in [("local", [String]()), ("callback", ["Sendable"])] {
+        let variable = try #require(variables().matches(in: file).first { $0.bindingNames == [name] })
+        let type = try #require(variable.node.contractTypes.first)
+        guard case .resolved(let result) = file.resolveType(type) else { Issue.record("Expected a callback"); continue }
+        #expect(result.function != nil)
+        #expect(result.attributes.map { $0.attributeName.trimmedDescription } == expectedAttributes)
+    }
+}

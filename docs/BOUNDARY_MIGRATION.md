@@ -71,7 +71,9 @@ It does not infer types, inherited access, macro output, or compiler identity.
 `contractTypes` does not synthesize types for inferred properties or expand
 aliases. Shared binding annotations occur once in this declaration-level list.
 `lexicalPlacement` distinguishes file scope, type members, and local scratch;
-a field in a local type is still a type member.
+a field in a local type is still a type member. Accessor bodies, including
+implicit getters, are local execution scopes. Their declarations have private
+effective access, and their aliases do not escape into the enclosing type.
 
 The named-contract recipe uses these facts to reject multi-value tuple syntax
 in exported contracts. It explicitly reports unresolved access. Repositories
@@ -94,7 +96,7 @@ target's own member scope before file-level aliases. It also follows enclosing
 extension targets. Matching members in other extensions remain unresolved
 instead of selecting a file-level alias. Extension scope expansion stops after
 32 targets. Unknown extension targets stay
-unresolved. Function-local and closure-local types cannot supply an extension target.
+unresolved. Function-local, closure-local, and accessor-local types cannot supply an extension target.
 
 After checking a type's own members and generic parameters, unqualified name
 lookup stops at scopes with inheritance or protocol conformance. It returns

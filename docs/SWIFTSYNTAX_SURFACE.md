@@ -7,6 +7,11 @@ Use query roots for common syntax. Use generic queries for other nodes. Compose
 with filters, projections, direct members, descendants, and same-file relations.
 Use a custom `SyntaxPattern` or an ordinary visitor when it helps.
 
+`within(scope)` and `excluding(scope)` check the file before running the wrapped
+query. Excluded files do not run its extractor, filters, or traversal. This also
+applies when the query runs within another match. Use these operations for file
+selection; use `filter` for conditions on extracted matches.
+
 `SourceFileContext.syntax` retains SwiftLint’s cached `SourceFileSyntax`.
 `SourceFileContext.source` retains the matching source snapshot. Rules do not
 call the parser. Native cache eviction does not change a collected match’s tree

@@ -69,8 +69,9 @@ import Testing
 @Test(arguments: [
     "func scratch() { enum Outer { struct Model {} } }",
     "let scratch = { enum Outer { struct Model {} } }",
+    "var scratch: Int { enum Outer { struct Model {} }; return 0 }",
 ])
-func extensionAccessIgnoresFunctionAndClosureLocalTypes(local: String) throws {
+func extensionAccessIgnoresLocalExecutionTypes(local: String) throws {
     let file = declarationContext("""
     public enum Outer { public struct Model {} }
     extension Outer.Model { public func value() -> Int { 0 } }
@@ -82,4 +83,24 @@ func extensionAccessIgnoresFunctionAndClosureLocalTypes(local: String) throws {
 
 private func declarationContext(_ source: String) -> SourceFileContext {
     SourceFileContext(file: SwiftLintFile(contents: source), root: FileManager.default.temporaryDirectory)
+}
+
+@Test func `accessor locals keep private access while local type fields remain members`() throws {
+    let file = declarationContext("""
+    public struct Screen {
+        public var count: Int {
+            let scratch: (() -> Void)? = nil
+            struct Local { public var completion: (() -> Void)? }
+            _ = scratch
+            _ = Local()
+            return 0
+        }
+    }
+    """)
+    let scratch = try #require(variables().matches(in: file).first { $0.bindingNames == ["scratch"] })
+    let member = try #require(variables().matches(in: file).first { $0.bindingNames == ["completion"] })
+    #expect(scratch.node.lexicalPlacement == .local)
+    #expect(scratch.node.effectiveAccess == .resolved(.private))
+    #expect(member.node.lexicalPlacement == .typeMember)
+    #expect(member.node.effectiveAccess == .resolved(.private))
 }

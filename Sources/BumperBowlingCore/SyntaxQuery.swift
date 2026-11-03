@@ -111,11 +111,17 @@ public struct SyntaxQuery<Node: SyntaxProtocol>: SyntaxPattern, Sendable {
     }
 
     public func within(_ scope: RuleScope) -> Self {
-        filter { scope.includes($0.file) }
+        let extract = extract
+        return Self(extract: { file, root in
+            scope.includes(file) ? extract(file, root) : []
+        })
     }
 
     public func excluding(_ scope: RuleScope) -> Self {
-        filter { !scope.includes($0.file) }
+        let extract = extract
+        return Self(extract: { file, root in
+            scope.includes(file) ? [] : extract(file, root)
+        })
     }
 
     public func containing<Related: SyntaxPattern>(_ related: Related) -> Self {

@@ -178,7 +178,7 @@ private struct LexicalTypeResolver {
     private func enclosingScope(of node: DeclSyntax) -> Syntax? { node.ancestors.first(where: isScope) }
 
     private func isScope(_ node: Syntax) -> Bool {
-        node.is(SourceFileSyntax.self) || node.is(MemberBlockSyntax.self) || node.is(CodeBlockSyntax.self) || node.is(ClosureExprSyntax.self)
+        node.is(SourceFileSyntax.self) || node.is(MemberBlockSyntax.self) || node.isLocalExecutionScope
     }
 
     private func optionalArgument(_ clause: GenericArgumentClauseSyntax?) -> TypeSyntax? {

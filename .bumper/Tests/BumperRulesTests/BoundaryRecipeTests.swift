@@ -100,3 +100,25 @@ import Testing
         reason: "Declare @Sendable or a known global actor on the callback type."
     ).matches).count == 1)
 }
+
+@Test func callbackRecipeSeparatesGetterScratchFromLocalTypeContracts() throws {
+    let harness = RuleTestHarness(CallbackIsolationRecipe.self)
+    let findings = try harness.evaluate([.swift("Sources/Example.swift", source: """
+    typealias Handler = @Sendable () -> Void
+    struct Example {
+        var count: Int {
+            typealias Handler = () -> Void
+            let completion: Handler? = nil
+            struct Local { var completion: (() -> Void)? }
+            _ = completion
+            return 0
+        }
+        var completion: Handler?
+    }
+    """)])
+    #expect(findings.count == 1)
+    #expect(findings.filter(ViolationMatcher(
+        id: "recipes.callbacks", path: "Sources/Example.swift", line: 6, column: 28,
+        reason: "Declare @Sendable or a known global actor on the callback type."
+    ).matches).count == 1)
+}
