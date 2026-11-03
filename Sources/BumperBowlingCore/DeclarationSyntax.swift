@@ -10,10 +10,16 @@ public enum LexicalPlacement: Sendable {
     case fileScope, typeMember, local
 }
 
+extension Syntax {
+    var isLocalExecutionScope: Bool {
+        self.is(CodeBlockSyntax.self) || self.is(ClosureExprSyntax.self) || self.is(AccessorBlockSyntax.self)
+    }
+}
+
 public extension SyntaxProtocol {
     var lexicalPlacement: LexicalPlacement {
         for ancestor in ancestors {
-            if ancestor.is(CodeBlockSyntax.self) || ancestor.is(ClosureExprSyntax.self) { return .local }
+            if ancestor.isLocalExecutionScope { return .local }
             if ancestor.is(MemberBlockItemSyntax.self) { return .typeMember }
             if ancestor.is(SourceFileSyntax.self) { return .fileScope }
         }
@@ -56,9 +62,9 @@ private func declarationAccess(_ node: DeclSyntax, visited: Set<SyntaxIdentifier
     let modifiers = node.asProtocol(WithModifiersSyntax.self)?.modifiers ?? []
     if node.explicitAccess == nil && modifiers.contains(where: { $0.name.text == "override" }) { return .unresolved }
     let enclosing = node.ancestors.first {
-        $0.isProtocol(DeclGroupSyntax.self) || $0.is(CodeBlockSyntax.self) || $0.is(ClosureExprSyntax.self)
+        $0.isProtocol(DeclGroupSyntax.self) || $0.isLocalExecutionScope
     }
-    if enclosing?.is(CodeBlockSyntax.self) == true || enclosing?.is(ClosureExprSyntax.self) == true { return .resolved(.private) }
+    if enclosing?.isLocalExecutionScope == true { return .resolved(.private) }
     if let extensionDecl = node.as(ExtensionDeclSyntax.self) {
         guard let target = extensionDecl.sameFileExtendedNominal else { return .unresolved }
         return declarationAccess(target, visited: visited)
@@ -78,7 +84,7 @@ extension ExtensionDeclSyntax {
         let candidates = root.descendants(of: DeclSyntax.self).filter { declaration in
             guard declaration.isProtocol(DeclGroupSyntax.self), !declaration.is(ExtensionDeclSyntax.self),
                   let name = declaration.asProtocol(NamedDeclSyntax.self)?.name.text,
-                  !declaration.ancestors.contains(where: { $0.is(CodeBlockSyntax.self) || $0.is(ClosureExprSyntax.self) }) else { return false }
+                  !declaration.ancestors.contains(where: { $0.isLocalExecutionScope }) else { return false }
             return Array(declaration.enclosingNominalNames.reversed()) + [name] == path
         }
         return candidates.count == 1 ? candidates.first : nil
